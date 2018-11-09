@@ -45,14 +45,6 @@ struct Sudoku
 	}
 };
 
-cudaError_t addWithCuda(int *c, const int *a, const int *b, unsigned int Size);
-
-__global__ void addKernel(int *c, const int *a, const int *b)
-{
-    int i = threadIdx.x;
-    c[i] = a[i] + b[i];
-}
-
 __host__ __device__ void PrintSudoku(byte arr[SIZE][SIZE])
 {
 	for (int i = 0; i < SIZE; i++)
@@ -141,36 +133,40 @@ __host__ __device__ byte cell(byte i, byte j)
 	return (i / 3) * 3 + j / 3;
 }
 
-__global__ void activeResetKernel(bool* d_active)
+__global__ void activeResetKernel(bool* d_active, int n)
 {
 	int i = (blockIdx.x * blockDim.x) + threadIdx.x;
-	if (i == 0)
+	if (i >= n)
 		return;
 
 	d_active[i] = false;
 }
 
-
-__global__ void copyKernel(Sudoku* d_sudokus, Sudoku* d_sudokus_target, bool* d_active, int* d_active_scan, int n, int newMax)
+__global__ void copyKernel(Sudoku* d_sudokus, Sudoku* d_sudokus_target, bool* d_active, int* d_active_scan, int n, int newMax, bool lastActive)
 {
 	int i = (blockIdx.x * blockDim.x) + threadIdx.x;
 	if (i == 0)
 		return;
 
-	if (i < n - 1 && d_active_scan[i] != d_active_scan[i + 1])
+	if ((i < n - 1 && d_active_scan[i] != d_active_scan[i + 1]) || (i == n - 1 && lastActive))
 	{
+		//printf("copyKernel ------------- %d  - max %d\n", i, n);
+		//printf("Swapping %d to %d\n", i, d_active_scan[i]);
 		d_sudokus_target[d_active_scan[i]] = d_sudokus[i];
 
-		if (d_active_scan[i] != newMax)
-			d_active[d_active_scan[i]] = 1;
+		if (d_active_scan[i] != newMax || (i == n - 1 && lastActive)) {
+			//printf("Activating %d\n", d_active_scan[i]);
+			d_active[d_active_scan[i]] = true;
+		}
 	}
 }
 
 __global__ void sudokuKernel(Sudoku* d_sudokus, bool* d_active, int n)
 {
 	//while(1) {
-
 	int i = (blockIdx.x * blockDim.x) +  threadIdx.x;
+	if (i > n)
+		return;
 
 	if (d_active[0] == true)
 	{
@@ -219,11 +215,10 @@ __global__ void sudokuKernel(Sudoku* d_sudokus, bool* d_active, int n)
 			// int index = d_stack[size - 1];
 			// d_stack[n]--;
 
-			int index = n + 1 + (i - 1) * 9 + (number - 1);
+			int index = n + 1 + (i - 1) * SIZE + (number - 1);
 			//printf("Tid:%d, (%d, %d), number %d, activates tid %d\n", i, (int)row, (int)col, (int)number, index);
 			d_sudokus[index] = mySudoku;
 			d_active[index] = true;
-			//printf("%d - active? %d\n", index, d_sudokus[index].active);
 			RemoveNumberFromRowOrColumn(mySudoku.rowNumbers[row], number);
 			RemoveNumberFromRowOrColumn(mySudoku.colNumbers[col], number);
 			RemoveNumberFromRowOrColumn(mySudoku.cellNumbers[cellnr], number);
@@ -312,8 +307,7 @@ void GetRowColCounts(uint16_t rows[], uint16_t columns[], uint16_t cells[], byte
 
 cudaError_t PrepareSudoku(byte sudokuArray[SIZE][SIZE])
 {
-	PrintSudoku(sudokuArray);
-	printf("------------------------------------------------------------------------------------\n");
+	//PrintSudoku(sudokuArray);
 
 	uint16_t rowNumbers[SIZE];
 	uint16_t colNumbers[SIZE];
@@ -331,15 +325,14 @@ cudaError_t PrepareSudoku(byte sudokuArray[SIZE][SIZE])
 
 	cudaError_t cudaStatus;
 
-	Sudoku activeSudoku(sudokuArray, rowNumbers, colNumbers, cellNumbers, rowCounts, colCounts, cellCounts);//, true);
-	//Sudoku inactiveSudoku(sudokuArray, rowNumbers, colNumbers, cellNumbers, rowCounts, colCounts, cellCounts);//, false);
+	Sudoku activeSudoku(sudokuArray, rowNumbers, colNumbers, cellNumbers, rowCounts, colCounts, cellCounts);
 
 	int nBlocks = 1000000;
-	int maxActiveBlocks = 1;
+	int activeBlocks = 1;
 	Sudoku *d_sudokus;
 	Sudoku *d_sudokus_target;
 
-	Sudoku *h_sudokus = (Sudoku*)malloc(nBlocks * sizeof(Sudoku));
+	Sudoku *h_sudokus = (Sudoku*)malloc((activeBlocks + 1) * sizeof(Sudoku));
 	if (h_sudokus == NULL) {
 		fprintf(stderr, "malloc failed!");
 		return cudaStatus;
@@ -347,39 +340,45 @@ cudaError_t PrepareSudoku(byte sudokuArray[SIZE][SIZE])
 	bool *d_active;
 	int *d_active_scan;
 
-	bool *h_active = (bool*)malloc(nBlocks * sizeof(bool));
+	bool *h_active = (bool*)malloc((activeBlocks + 9 * activeBlocks + 1) * sizeof(bool));
 	if (h_active == NULL) {
 		fprintf(stderr, "malloc failed!");
 		return cudaStatus;
 	}
 
-	for (int i = 0; i < nBlocks; i++) {
+	for (int i = 0; i < (activeBlocks + 1); i++) {
 		if (i == 1)
 		{
-			h_active[i] = true;
 			h_sudokus[i] = activeSudoku;
-		}
-		else
-		{
-			h_active[i] = 0;
 		}
 	}
 
-	cudaStatus = cudaMalloc((void**)&d_sudokus, nBlocks * sizeof(Sudoku));
+	for (int i = 0; i < (activeBlocks + 9 * activeBlocks + 1); i++) {
+		if (i == 1)
+		{
+			h_active[i] = true;
+		}
+		else
+		{
+			h_active[i] = false;
+		}
+	}
+
+	cudaStatus = cudaMalloc((void**)&d_sudokus, (activeBlocks + 9 * activeBlocks + 1) * sizeof(Sudoku));
 	if (cudaStatus != cudaSuccess) {
 		fprintf(stderr, "cudaMalloc failed!");
 		cudaFree(d_sudokus);
 		return cudaStatus;
 	}
 
-	cudaStatus = cudaMemcpy(d_sudokus, h_sudokus, nBlocks * sizeof(Sudoku), cudaMemcpyHostToDevice);
+	cudaStatus = cudaMemcpy(d_sudokus, h_sudokus, (activeBlocks + 1) * sizeof(Sudoku), cudaMemcpyHostToDevice);
 	if (cudaStatus != cudaSuccess) {
 		fprintf(stderr, "cudaMemcpy failed!");
 		cudaFree(d_sudokus);
 		return cudaStatus;
 	}
 
-	cudaStatus = cudaMalloc((void**)&d_active, nBlocks * sizeof(bool));
+	cudaStatus = cudaMalloc((void**)&d_active, (activeBlocks + 9 * activeBlocks + 1) * sizeof(bool));
 	if (cudaStatus != cudaSuccess) {
 		fprintf(stderr, "cudaMalloc failed!");
 		cudaFree(d_sudokus);
@@ -387,7 +386,7 @@ cudaError_t PrepareSudoku(byte sudokuArray[SIZE][SIZE])
 		return cudaStatus;
 	}
 
-	cudaStatus = cudaMalloc((void**)&d_active_scan, nBlocks * sizeof(int));
+	cudaStatus = cudaMalloc((void**)&d_active_scan, (activeBlocks + 9 * activeBlocks + 1) * sizeof(int));
 	if (cudaStatus != cudaSuccess) {
 		fprintf(stderr, "cudaMalloc failed!");
 		cudaFree(d_sudokus);
@@ -397,7 +396,7 @@ cudaError_t PrepareSudoku(byte sudokuArray[SIZE][SIZE])
 	}
 
 
-	cudaStatus = cudaMemcpy(d_active, h_active, nBlocks * sizeof(bool), cudaMemcpyHostToDevice);
+	cudaStatus = cudaMemcpy(d_active, h_active, (activeBlocks + 9 * activeBlocks + 1) * sizeof(bool), cudaMemcpyHostToDevice);
 	if (cudaStatus != cudaSuccess) {
 		fprintf(stderr, "cudaMemcpy failed!");
 		cudaFree(d_sudokus);
@@ -409,16 +408,41 @@ cudaError_t PrepareSudoku(byte sudokuArray[SIZE][SIZE])
 
 	thrust::device_ptr<bool> dev_active_ptr(d_active);
 	thrust::device_ptr<int> dev_active_scan_ptr(d_active_scan);
-	thrust::device_ptr<Sudoku> dev_sudokus_ptr(d_sudokus);
+
+	cudaEvent_t start, stop;
+	float time;
+	cudaEventCreate(&start);
+	cudaEventCreate(&stop);
+	cudaEventRecord(start, 0);
 
 	int i = 0;
+	bool lastActive;
 	while (1)
 	//for (int i = 0; i < 3; i++)
 	{
 		i++;
-		printf("Iteration: %d\n", i);
-		sudokuKernel <<<nBlocks/1024 + 1, 1024>>>(d_sudokus, d_active, maxActiveBlocks);
-		cudaDeviceSynchronize();
+		//printf("Iteration: %d\n", i); // 1 3
+		sudokuKernel <<<(activeBlocks + 1)/1024 + 1, 1024>>>(d_sudokus, d_active, activeBlocks);
+			// Check for any errors launching the kernel
+			cudaStatus = cudaGetLastError();
+			if (cudaStatus != cudaSuccess) {
+				fprintf(stderr, "addKernel launch failed: %s\n", cudaGetErrorString(cudaStatus));
+				cudaFree(d_sudokus);
+				cudaFree(d_active);
+				cudaFree(d_active_scan);
+				return cudaStatus;
+			}
+
+			// cudaDeviceSynchronize waits for the kernel to finish, and returns
+			// any errors encountered during the launch.
+			cudaStatus = cudaDeviceSynchronize();
+			if (cudaStatus != cudaSuccess) {
+				fprintf(stderr, "cudaDeviceSynchronize returned error code %d after launching sudokuKernel!\n", cudaStatus);
+				cudaFree(d_sudokus);
+				cudaFree(d_active);
+				cudaFree(d_active_scan);
+				return cudaStatus;
+			}
 
 		if (dev_active_ptr[0] == true)
 		{
@@ -426,50 +450,99 @@ cudaError_t PrepareSudoku(byte sudokuArray[SIZE][SIZE])
 			break;
 		}
 
+		activeBlocks = activeBlocks + activeBlocks * 9;
+
+
+		//printf("Scanning table, length: %d\n", activeBlocks + 1);
 		dev_active_ptr[0] = true;
-		thrust::exclusive_scan(dev_active_ptr, dev_active_ptr + nBlocks, dev_active_scan_ptr);
+		thrust::exclusive_scan(dev_active_ptr, dev_active_ptr + activeBlocks + 1, dev_active_scan_ptr);
 		dev_active_ptr[0] = false;
-		thrust::device_ptr<int> newMax = thrust::max_element(dev_active_scan_ptr, dev_active_scan_ptr + nBlocks);
+		int newActive = thrust::max_element(dev_active_scan_ptr, dev_active_scan_ptr + activeBlocks + 1)[0];
 
-		maxActiveBlocks = maxActiveBlocks + maxActiveBlocks * 9;
+		lastActive = dev_active_ptr[activeBlocks];
+		if (lastActive)
+			newActive++;
 
-		cudaStatus = cudaMalloc((void**)&d_sudokus_target, nBlocks * sizeof(Sudoku));
+		//printf("New active: %d\n", newActive);
+
+		//printf("Allocing table, length: %d\n", activeBlocks + 9 * activeBlocks + 1);
+		cudaStatus = cudaMalloc((void**)&d_sudokus_target, (activeBlocks + 9 * activeBlocks + 1) * sizeof(Sudoku));
 		if (cudaStatus != cudaSuccess) {
 			fprintf(stderr, "cudaMalloc failed!");
 			cudaFree(d_sudokus);
 			return cudaStatus;
 		}
 
-		activeResetKernel <<<nBlocks / 1024 + 1, 1024 >>>(d_active);
-		cudaDeviceSynchronize();
-		copyKernel <<<nBlocks / 1024 + 1, 1024 >>>(d_sudokus, d_sudokus_target, d_active, d_active_scan, nBlocks, *newMax);
-		cudaDeviceSynchronize();
+		cudaFree(d_active);
+		cudaStatus = cudaMalloc((void**)&d_active, (activeBlocks + 9 * activeBlocks + 1) * sizeof(bool));
+		if (cudaStatus != cudaSuccess) {
+			fprintf(stderr, "cudaMalloc failed!");
+			cudaFree(d_sudokus);
+			cudaFree(d_active);
+			return cudaStatus;
+		}
+		dev_active_ptr = thrust::device_ptr<bool>(d_active);
+
+		activeResetKernel <<<(activeBlocks + 9 * activeBlocks + 1) / 1024 + 1, 1024 >>>(d_active, (activeBlocks + 9 * activeBlocks + 1));
+		// Check for any errors launching the kernel
+			cudaStatus = cudaGetLastError();
+			if (cudaStatus != cudaSuccess) {
+				fprintf(stderr, "activeResetKernel launch failed: %s\n", cudaGetErrorString(cudaStatus));
+				cudaFree(d_sudokus);
+				cudaFree(d_active);
+				cudaFree(d_active_scan);
+				return cudaStatus;
+			}
+
+			// cudaDeviceSynchronize waits for the kernel to finish, and returns
+			// any errors encountered during the launch.
+			cudaStatus = cudaDeviceSynchronize();
+			if (cudaStatus != cudaSuccess) {
+				fprintf(stderr, "cudaDeviceSynchronize returned error code %d after launching activeResetKernel!\n", cudaStatus);
+				cudaFree(d_sudokus);
+				cudaFree(d_active);
+				cudaFree(d_active_scan);
+				return cudaStatus;
+			}
+
+		copyKernel <<<(activeBlocks + 1) / 1024 + 1, 1024 >>>(d_sudokus, d_sudokus_target, d_active, d_active_scan, (activeBlocks + 1), newActive, lastActive);
+		// Check for any errors launching the kernel
+			cudaStatus = cudaGetLastError();
+			if (cudaStatus != cudaSuccess) {
+				fprintf(stderr, "copyKernel launch failed: %s\n", cudaGetErrorString(cudaStatus));
+				cudaFree(d_sudokus);
+				cudaFree(d_active);
+				cudaFree(d_active_scan);
+				return cudaStatus;
+			}
+
+			// cudaDeviceSynchronize waits for the kernel to finish, and returns
+			// any errors encountered during the launch.
+			cudaStatus = cudaDeviceSynchronize();
+			if (cudaStatus != cudaSuccess) {
+				fprintf(stderr, "cudaDeviceSynchronize returned error code %d after launching copyKernel!\n", cudaStatus);
+				cudaFree(d_sudokus);
+				cudaFree(d_active);
+				cudaFree(d_active_scan);
+				return cudaStatus;
+			}
+
+		cudaFree(d_active_scan);
+		cudaStatus = cudaMalloc((void**)&d_active_scan, (activeBlocks + 9 * activeBlocks + 1) * sizeof(int));
+		if (cudaStatus != cudaSuccess) {
+			fprintf(stderr, "cudaMalloc failed!");
+			cudaFree(d_sudokus);
+			cudaFree(d_active);
+			cudaFree(d_active_scan);
+			return cudaStatus;
+		}
+		dev_active_scan_ptr = thrust::device_ptr<int>(d_active_scan);
 
 		cudaFree(d_sudokus);
 		d_sudokus = d_sudokus_target;
 
-		maxActiveBlocks = (*newMax) - 1;
-	}
-
-	// Check for any errors launching the kernel
-	cudaStatus = cudaGetLastError();
-	if (cudaStatus != cudaSuccess) {
-		fprintf(stderr, "addKernel launch failed: %s\n", cudaGetErrorString(cudaStatus));
-		cudaFree(d_sudokus);
-		cudaFree(d_active);
-		cudaFree(d_active_scan);
-		return cudaStatus;
-	}
-
-	// cudaDeviceSynchronize waits for the kernel to finish, and returns
-	// any errors encountered during the launch.
-	cudaStatus = cudaDeviceSynchronize();
-	if (cudaStatus != cudaSuccess) {
-		fprintf(stderr, "cudaDeviceSynchronize returned error code %d after launching sudokuKernel!\n", cudaStatus);
-		cudaFree(d_sudokus);
-		cudaFree(d_active);
-		cudaFree(d_active_scan);
-		return cudaStatus;
+		activeBlocks = newActive - 1;
+		//getchar();
 	}
 
 	cudaStatus = cudaMemcpy(h_sudokus, d_sudokus, 1 * sizeof(Sudoku), cudaMemcpyDeviceToHost);
@@ -478,6 +551,11 @@ cudaError_t PrepareSudoku(byte sudokuArray[SIZE][SIZE])
 		cudaFree(d_sudokus);
 		return cudaStatus;
 	}
+
+	cudaEventRecord(stop, 0);
+	cudaEventSynchronize(stop);
+	cudaEventElapsedTime(&time, start, stop);
+	printf("Time for the kernel: %f ms\n", time);
 
 	printf("Original:\n");
 	PrintSudoku(sudokuArray);
@@ -494,114 +572,48 @@ int main()
 {
 	byte sudoku[SIZE][SIZE];
 
+	printf("Entry:\n");
 	ReadSudoku(sudoku, "Entry.txt");
 	cudaError_t cudaStatus = PrepareSudoku(sudoku);
 	if (cudaStatus != cudaSuccess) {
 		fprintf(stderr, "PrepareSudoku failed!");
 		return 1;
 	}
+	printf("------------------------------------------------------------\n");
 
-    //const int a[arraySize] = { 1, 2, 3, 4, 5 };
-    //const int b[arraySize] = { 10, 20, 30, 40, 50 };
-    //int c[arraySize] = { 0 };
+	printf("Easy:\n");
+	ReadSudoku(sudoku, "Easy.txt");
+	cudaStatus = PrepareSudoku(sudoku);
+	if (cudaStatus != cudaSuccess) {
+		fprintf(stderr, "PrepareSudoku failed!");
+		return 1;
+	}
+	printf("------------------------------------------------------------\n");
 
-    //// Add vectors in parallel.
-    //cudaError_t cudaStatus = addWithCuda(c, a, b, arraySize);
-    //if (cudaStatus != cudaSuccess) {
-    //    fprintf(stderr, "addWithCuda failed!");
-    //    return 1;
-    //}
+	printf("Medium:\n");
+	ReadSudoku(sudoku, "Medium.txt");
+	cudaStatus = PrepareSudoku(sudoku);
+	if (cudaStatus != cudaSuccess) {
+		fprintf(stderr, "PrepareSudoku failed!");
+		return 1;
+	}
+	printf("------------------------------------------------------------\n");
 
-    //printf("{1,2,3,4,5} + {10,20,30,40,50} = {%d,%d,%d,%d,%d}\n",
-    //    c[0], c[1], c[2], c[3], c[4]);
+	printf("Hard:\n");
+	ReadSudoku(sudoku, "Hard.txt");
+	cudaStatus = PrepareSudoku(sudoku);
+	if (cudaStatus != cudaSuccess) {
+		fprintf(stderr, "PrepareSudoku failed!");
+		return 1;
+	}
+	printf("------------------------------------------------------------\n");
 
-    //// cudaDeviceReset must be called before exiting in order for profiling and
-    //// tracing tools such as Nsight and Visual Profiler to show complete traces.
-    //cudaStatus = cudaDeviceReset();
-    //if (cudaStatus != cudaSuccess) {
-    //    fprintf(stderr, "cudaDeviceReset failed!");
-    //    return 1;
-    //}
-
+	printf("Evil:\n");
+	ReadSudoku(sudoku, "Evil.txt");
+	cudaStatus = PrepareSudoku(sudoku);
+	if (cudaStatus != cudaSuccess) {
+		fprintf(stderr, "PrepareSudoku failed!");
+		return 1;
+	}
     return 0;
-}
-
-// Helper function for using CUDA to add vectors in parallel.
-cudaError_t addWithCuda(int *c, const int *a, const int *b, unsigned int Size)
-{
-    int *dev_a = 0;
-    int *dev_b = 0;
-    int *dev_c = 0;
-    cudaError_t cudaStatus;
-
-    // Choose which GPU to run on, change this on a multi-GPU system.
-    cudaStatus = cudaSetDevice(0);
-    if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "cudaSetDevice failed!  Do you have a CUDA-capable GPU installed?");
-        goto Error;
-    }
-
-    // Allocate GPU buffers for three vectors (two input, one output)    .
-    cudaStatus = cudaMalloc((void**)&dev_c, SIZE * sizeof(int));
-    if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "cudaMalloc failed!");
-        goto Error;
-    }
-
-    cudaStatus = cudaMalloc((void**)&dev_a, SIZE * sizeof(int));
-    if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "cudaMalloc failed!");
-        goto Error;
-    }
-
-    cudaStatus = cudaMalloc((void**)&dev_b, SIZE * sizeof(int));
-    if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "cudaMalloc failed!");
-        goto Error;
-    }
-
-    // Copy input vectors from host memory to GPU buffers.
-    cudaStatus = cudaMemcpy(dev_a, a, SIZE * sizeof(int), cudaMemcpyHostToDevice);
-    if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "cudaMemcpy failed!");
-        goto Error;
-    }
-
-    cudaStatus = cudaMemcpy(dev_b, b, SIZE * sizeof(int), cudaMemcpyHostToDevice);
-    if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "cudaMemcpy failed!");
-        goto Error;
-    }
-
-    // Launch a kernel on the GPU with one thread for each element.
-    addKernel<<<1, SIZE>>>(dev_c, dev_a, dev_b);
-
-    // Check for any errors launching the kernel
-    cudaStatus = cudaGetLastError();
-    if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "addKernel launch failed: %s\n", cudaGetErrorString(cudaStatus));
-        goto Error;
-    }
-    
-    // cudaDeviceSynchronize waits for the kernel to finish, and returns
-    // any errors encountered during the launch.
-    cudaStatus = cudaDeviceSynchronize();
-    if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "cudaDeviceSynchronize returned error code %d after launching addKernel!\n", cudaStatus);
-        goto Error;
-    }
-
-    // Copy output vector from GPU buffer to host memory.
-    cudaStatus = cudaMemcpy(c, dev_c, SIZE * sizeof(int), cudaMemcpyDeviceToHost);
-    if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "cudaMemcpy failed!");
-        goto Error;
-    }
-
-Error:
-    cudaFree(dev_c);
-    cudaFree(dev_a);
-    cudaFree(dev_b);
-    
-    return cudaStatus;
 }
