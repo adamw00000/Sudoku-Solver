@@ -279,7 +279,7 @@ __host__ __device__ bool CompareBoards(byte arr[][9], byte arr2[][9])
 	return true;
 }
 
-__global__ void activeResetKernel(int* d_active, int n)
+__global__ void activeResetKernel(bool* d_active, int n)
 {
 	int i = (blockIdx.x * blockDim.x) + threadIdx.x;
 	if (i >= n)
@@ -288,7 +288,7 @@ __global__ void activeResetKernel(int* d_active, int n)
 	d_active[i] = false;
 }
 
-__global__ void copyKernel(Sudoku* d_sudokus, Sudoku* d_sudokus_target, int* d_active, int* d_active_scan, int* d_active_copy, int n, int newMax, bool lastActive)
+__global__ void copyKernel(Sudoku* d_sudokus, Sudoku* d_sudokus_target, bool* d_active, int* d_active_scan, bool* d_active_copy, int n, int newMax, bool lastActive)
 {
 	int i = (blockIdx.x * blockDim.x) + threadIdx.x;
 	if (i == 0)
@@ -306,19 +306,16 @@ __global__ void copyKernel(Sudoku* d_sudokus, Sudoku* d_sudokus_target, int* d_a
 		//	printf("Swapping %d to %d - pre-copy\n", i, d_active_scan[i]);
 		//	//PrintSudoku(d_sudokus[i].board);
 		//}
-
-		//printf("Target - %d", d_active_scan[i]);
-
 		memcpy(d_sudokus_target + d_active_scan[i], d_sudokus + i, sizeof(Sudoku));
 
-		//if (!CompareBoards(d_sudokus[i].board, d_sudokus_target[d_active_scan[i]].board))
-		//{
-		//	char s1[200], s2[200];
-		//	BoardToString(d_sudokus[i].board, s1);
-		//	BoardToString(d_sudokus_target[d_active_scan[i]].board, s2);
-		//	printf("%s%s--------------------------------------\n", s1, s2);
-		//	//printf("?????????????????\n");
-		//}
+		if (!CompareBoards(d_sudokus[i].board, d_sudokus_target[d_active_scan[i]].board))
+		{
+			char s1[200], s2[200];
+			BoardToString(d_sudokus[i].board, s1);
+			BoardToString(d_sudokus_target[d_active_scan[i]].board, s2);
+			printf("%s%s--------------------------------------\n", s1, s2);
+			//printf("?????????????????\n");
+		}
 
 		//if (!ValidateBoard(d_sudokus_target[d_active_scan[i]].board, SIZE))// && d_active_scan[i] == 13) 
 		//{
@@ -334,9 +331,11 @@ __global__ void copyKernel(Sudoku* d_sudokus, Sudoku* d_sudokus_target, int* d_a
 	}
 }
 
-__global__ void copyActiveKernel(int* d_active, int* d_active_copy, int n)
+__global__ void copyActiveKernel(bool* d_active, bool* d_active_copy, int n)
 {
 	int i = (blockIdx.x * blockDim.x) + threadIdx.x;
+	if (i == 0)
+		return;
 
 	if (i < n)
 	{
@@ -344,7 +343,7 @@ __global__ void copyActiveKernel(int* d_active, int* d_active_copy, int n)
 	}
 }
 
-__global__ void sudokuKernel(Sudoku* d_sudokus, int* d_active, int n)
+__global__ void sudokuKernel(Sudoku* d_sudokus, bool* d_active, int n)
 {
 	//while(1) {
 	int i = (blockIdx.x * blockDim.x) +  threadIdx.x;
@@ -365,8 +364,8 @@ __global__ void sudokuKernel(Sudoku* d_sudokus, int* d_active, int n)
 	}
 	//printf("Id: %d\n", i);
 
-	//if (i == 1)
-	//	PrintSudoku(mySudoku.board);
+	if (i == 1)
+		PrintSudoku(mySudoku.board);
 
 	if (!ValidateBoard(mySudoku.board, SIZE))// && i == 13) 
 	{
@@ -548,11 +547,11 @@ cudaError_t PrepareSudoku(byte sudokuArray[SIZE][SIZE])
 		fprintf(stderr, "malloc failed!");
 		return cudaStatus;
 	}
-	int *d_active;
-	int *d_active_copy;
+	bool *d_active;
+	bool *d_active_copy;
 	int *d_active_scan;
 
-	int *h_active = (int*)malloc((activeBlocks + 9 * activeBlocks + 1) * sizeof(int));
+	bool *h_active = (bool*)malloc((activeBlocks + 9 * activeBlocks + 1) * sizeof(bool));
 	if (h_active == NULL) {
 		fprintf(stderr, "malloc failed!");
 		return cudaStatus;
@@ -590,7 +589,7 @@ cudaError_t PrepareSudoku(byte sudokuArray[SIZE][SIZE])
 		return cudaStatus;
 	}
 
-	cudaStatus = cudaMalloc((void**)&d_active, (activeBlocks + 9 * activeBlocks + 1) * sizeof(int));
+	cudaStatus = cudaMalloc((void**)&d_active, (activeBlocks + 9 * activeBlocks + 1) * sizeof(bool));
 	if (cudaStatus != cudaSuccess) {
 		fprintf(stderr, "cudaMalloc failed!");
 		cudaFree(d_sudokus);
@@ -608,7 +607,7 @@ cudaError_t PrepareSudoku(byte sudokuArray[SIZE][SIZE])
 	}
 
 
-	cudaStatus = cudaMemcpy(d_active, h_active, (activeBlocks + 9 * activeBlocks + 1) * sizeof(int), cudaMemcpyHostToDevice);
+	cudaStatus = cudaMemcpy(d_active, h_active, (activeBlocks + 9 * activeBlocks + 1) * sizeof(bool), cudaMemcpyHostToDevice);
 	if (cudaStatus != cudaSuccess) {
 		fprintf(stderr, "cudaMemcpy failed!");
 		cudaFree(d_sudokus);
@@ -618,7 +617,7 @@ cudaError_t PrepareSudoku(byte sudokuArray[SIZE][SIZE])
 	}
 	// Launch a kernel on the GPU with one thread for each element.
 
-	thrust::device_ptr<int> dev_active_ptr(d_active);
+	thrust::device_ptr<bool> dev_active_ptr(d_active);
 	thrust::device_ptr<int> dev_active_scan_ptr(d_active_scan);
 
 	cudaEvent_t start, stop;
@@ -685,27 +684,25 @@ cudaError_t PrepareSudoku(byte sudokuArray[SIZE][SIZE])
 			return cudaStatus;
 		}
 
-		cudaStatus = cudaMalloc((void**)&d_active_copy, (activeBlocks + 1) * sizeof(int));
+		cudaStatus = cudaMalloc((void**)&d_active_copy, (activeBlocks + 1) * sizeof(bool));
 		if (cudaStatus != cudaSuccess) {
 			fprintf(stderr, "cudaMalloc failed!");
 			cudaFree(d_sudokus);
 			cudaFree(d_active);
 			return cudaStatus;
 		}
-		thrust::device_ptr<int> dev_active_copy_ptr(d_active_copy);
-
 		copyActiveKernel << <(activeBlocks + 1) / 1024 + 1, 1024 >> >(d_active, d_active_copy, (activeBlocks + 1));
 		cudaStatus = cudaDeviceSynchronize();
 
 		cudaFree(d_active);
-		cudaStatus = cudaMalloc((void**)&d_active, (activeBlocks + 9 * activeBlocks + 1) * sizeof(int));
+		cudaStatus = cudaMalloc((void**)&d_active, (activeBlocks + 9 * activeBlocks + 1) * sizeof(bool));
 		if (cudaStatus != cudaSuccess) {
 			fprintf(stderr, "cudaMalloc failed!");
 			cudaFree(d_sudokus);
 			cudaFree(d_active);
 			return cudaStatus;
 		}
-		dev_active_ptr = thrust::device_ptr<int>(d_active);
+		dev_active_ptr = thrust::device_ptr<bool>(d_active);
 
 		activeResetKernel <<<(activeBlocks + 9 * activeBlocks + 1) / 1024 + 1, 1024 >>>(d_active, (activeBlocks + 9 * activeBlocks + 1));
 		// Check for any errors launching the kernel
@@ -729,12 +726,6 @@ cudaError_t PrepareSudoku(byte sudokuArray[SIZE][SIZE])
 				return cudaStatus;
 			}
 
-		//for (int i = 0; i < activeBlocks + 1; i++)
-		//{
-		//	printf("%d %d; ", (int)dev_active_copy_ptr[i], (int)dev_active_scan_ptr[i]);
-		//}
-		//printf("\n");
-		//printf("Active: %d\n", activeBlocks);
 
 		copyKernel << <(activeBlocks + 1) / 1024 + 1, 1024 >> >(d_sudokus, d_sudokus_target, d_active, d_active_scan, d_active_copy, (activeBlocks + 1), newActive, lastActive);
 		// Check for any errors launching the kernel
@@ -774,7 +765,7 @@ cudaError_t PrepareSudoku(byte sudokuArray[SIZE][SIZE])
 		d_sudokus = d_sudokus_target;
 
 		activeBlocks = newActive - 1;
-		//getchar();
+		getchar();
 	}
 
 	cudaStatus = cudaMemcpy(h_sudokus, d_sudokus, 1 * sizeof(Sudoku), cudaMemcpyDeviceToHost);
