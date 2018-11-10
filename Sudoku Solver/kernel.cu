@@ -8,6 +8,7 @@
 #include <fstream>
 #include <thrust/device_vector.h>
 #include <thrust/extrema.h>
+#include <set>
 
 
 #define SIZE 9
@@ -26,7 +27,11 @@ struct Sudoku
 
 	//bool active;
 
-	Sudoku(byte board[SIZE][SIZE], uint16_t rowNumbers[SIZE], uint16_t colNumbers[SIZE], 
+	__host__ __device__ Sudoku()
+	{
+	}
+
+	__host__ __device__ Sudoku(byte board[SIZE][SIZE], uint16_t rowNumbers[SIZE], uint16_t colNumbers[SIZE],
 		uint16_t cellNumbers[SIZE], byte rowCounts[SIZE], byte colCounts[SIZE], byte cellCounts[SIZE])//,bool active)
 	{
 		//this->active = active;
@@ -43,20 +48,67 @@ struct Sudoku
 				this->board[i][j] = board[i][j];
 		}
 	}
+
+	__host__ __device__ Sudoku& operator=(const Sudoku& old)
+	{
+		if (this != &old)
+		{
+			for (int i = 0; i < SIZE; i++)
+			{
+				this->rowNumbers[i] = old.rowNumbers[i];
+				this->colNumbers[i] = old.colNumbers[i];
+				this->cellNumbers[i] = old.cellNumbers[i];
+				this->rowCounts[i] = old.rowCounts[i];
+				this->colCounts[i] = old.colCounts[i];
+				this->cellCounts[i] = old.cellCounts[i];
+				for (int j = 0; j < SIZE; j++)
+					this->board[i][j] = old.board[i][j];
+			}
+		}
+		return *this;
+	}
 };
 
 __host__ __device__ void PrintSudoku(byte arr[SIZE][SIZE])
 {
+	char s[200];
+	int k = 0;
 	for (int i = 0; i < SIZE; i++)
 	{
 		for (int j = 0; j < SIZE; j++)
 		{
-			printf("%d ", (int)arr[i][j]);
-			if (j == SIZE - 1)
-				printf("\n");
+			s[k] = arr[i][j] + '0';
+			s[k + 1] = j == SIZE - 1 ? '\n' : ' ';
+			k += 2;
+			//printf("%d ", (int)arr[i][j]);
+			//if (j == SIZE - 1)
+			//	printf("\n");
 		}
 	}
-	printf("\n");
+	s[k] = '\n';
+	s[k + 1] = '\0';
+	//printf("\n");
+	printf("%s", s);
+}
+
+__host__ __device__ void BoardToString(byte arr[SIZE][SIZE], char* s)
+{
+	int k = 0;
+	for (int i = 0; i < SIZE; i++)
+	{
+		for (int j = 0; j < SIZE; j++)
+		{
+			s[k] = arr[i][j] + '0';
+			s[k + 1] = j == SIZE - 1 ? '\n' : ' ';
+			k += 2;
+			//printf("%d ", (int)arr[i][j]);
+			//if (j == SIZE - 1)
+			//	printf("\n");
+		}
+	}
+	s[k] = '\n';
+	s[k + 1] = '\0';
+	//printf("\n");
 }
 
 __host__ __device__ byte GetBestCount(byte structure[])
@@ -133,6 +185,100 @@ __host__ __device__ byte cell(byte i, byte j)
 	return (i / 3) * 3 + j / 3;
 }
 
+__host__ __device__ bool notInRow(byte arr[][9], int row)
+{
+	// Set to store characters seen so far. 
+	uint16_t str = 0;
+
+	for (int i = 0; i < 9; i++) {
+		// If already encountered before, return false 
+		if (IsNumberInRowOrColumn(str, arr[row][i]))
+			return false;
+
+		// If it is not an empty cell, insert value 
+		// at the current cell in the set 
+		if (arr[row][i] != 0)
+			AddNumberToRowOrColumn(str, arr[row][i]);
+	}
+	return true;
+}
+
+// Checks whether there is any duplicate 
+// in current column or not. 
+__host__ __device__ bool notInCol(byte arr[][9], int col)
+{
+	uint16_t str = 0;
+
+	for (int i = 0; i < 9; i++) {
+
+		// If already encountered before, return false 
+		if (IsNumberInRowOrColumn(str, arr[i][col]))
+			return false;
+
+		// If it is not an empty cell, 
+		// insert value at the current cell in the set 
+		if (arr[i][col] != 0)
+			AddNumberToRowOrColumn(str, arr[i][col]);
+	}
+	return true;
+}
+
+// Checks whether there is any duplicate 
+// in current 3x3 box or not. 
+__host__ __device__ bool notInBox(byte arr[][9], int startRow, int startCol)
+{
+	uint16_t box = 0;
+
+	for (int row = 0; row < 3; row++) {
+		for (int col = 0; col < 3; col++) {
+			char curr = arr[row + startRow][col + startCol];
+
+			// If already encountered before, return false 
+			if (IsNumberInRowOrColumn(box, curr))
+				return false;
+
+			// If it is not an empty cell, 
+			// insert value at current cell in set 
+			if (curr != 0)
+				AddNumberToRowOrColumn(box, curr);
+		}
+	}
+	return true;
+}
+
+// Checks whether current row and current column and 
+// current 3x3 box is valid or not 
+__host__ __device__ bool isValid(byte arr[][9], int row, int col)
+{
+	return notInRow(arr, row) && notInCol(arr, col) &&
+		notInBox(arr, row - row % 3, col - col % 3);
+}
+
+__host__ __device__ bool ValidateBoard(byte arr[][9], int n)
+{
+	for (int i = 0; i < n; i++) {
+		for (int j = 0; j < n; j++) {
+
+			// If current row or current column or 
+			// current 3x3 box is not valid, return false 
+			if (!isValid(arr, i, j))
+				return false;
+		}
+	}
+	return true;
+}
+
+__host__ __device__ bool CompareBoards(byte arr[][9], byte arr2[][9])
+{
+	for (int i = 0; i < SIZE; i++) {
+		for (int j = 0; j < SIZE; j++) {
+			if (arr[i][j] != arr2[i][j])
+				return false;
+		}
+	}
+	return true;
+}
+
 __global__ void activeResetKernel(bool* d_active, int n)
 {
 	int i = (blockIdx.x * blockDim.x) + threadIdx.x;
@@ -142,22 +288,58 @@ __global__ void activeResetKernel(bool* d_active, int n)
 	d_active[i] = false;
 }
 
-__global__ void copyKernel(Sudoku* d_sudokus, Sudoku* d_sudokus_target, bool* d_active, int* d_active_scan, int n, int newMax, bool lastActive)
+__global__ void copyKernel(Sudoku* d_sudokus, Sudoku* d_sudokus_target, bool* d_active, int* d_active_scan, bool* d_active_copy, int n, int newMax, bool lastActive)
 {
 	int i = (blockIdx.x * blockDim.x) + threadIdx.x;
 	if (i == 0)
 		return;
 
-	if ((i < n - 1 && d_active_scan[i] != d_active_scan[i + 1]) || (i == n - 1 && lastActive))
+	if (i < n && d_active_copy[i] == true)
 	{
 		//printf("copyKernel ------------- %d  - max %d\n", i, n);
+		//if (d_active_scan[i] == 1)
 		//printf("Swapping %d to %d\n", i, d_active_scan[i]);
-		d_sudokus_target[d_active_scan[i]] = d_sudokus[i];
 
-		if (d_active_scan[i] != newMax || (i == n - 1 && lastActive)) {
-			//printf("Activating %d\n", d_active_scan[i]);
-			d_active[d_active_scan[i]] = true;
+		//if (!ValidateBoard(d_sudokus[i].board, SIZE))// && d_active_scan[i] == 13) 
+		//{
+		//	printf("Invalid board - pre-copy!!! - %d\n", i);
+		//	printf("Swapping %d to %d - pre-copy\n", i, d_active_scan[i]);
+		//	//PrintSudoku(d_sudokus[i].board);
+		//}
+		memcpy(d_sudokus_target + d_active_scan[i], d_sudokus + i, sizeof(Sudoku));
+
+		if (!CompareBoards(d_sudokus[i].board, d_sudokus_target[d_active_scan[i]].board))
+		{
+			char s1[200], s2[200];
+			BoardToString(d_sudokus[i].board, s1);
+			BoardToString(d_sudokus_target[d_active_scan[i]].board, s2);
+			printf("%s%s--------------------------------------\n", s1, s2);
+			//printf("?????????????????\n");
 		}
+
+		//if (!ValidateBoard(d_sudokus_target[d_active_scan[i]].board, SIZE))// && d_active_scan[i] == 13) 
+		//{
+		//	printf("Invalid board - post-copy!!! - %d\n", i);
+		//	printf("Swapping %d to %d - post-copy\n", i, d_active_scan[i]);
+		//	//PrintSudoku(d_sudokus[i].board);
+		//}
+
+		//if (d_active_scan[i] < newMax || (i == n - 1 && lastActive)) {
+		//printf("Activating %d\n", d_active_scan[i]);
+		d_active[d_active_scan[i]] = true;
+		//}
+	}
+}
+
+__global__ void copyActiveKernel(bool* d_active, bool* d_active_copy, int n)
+{
+	int i = (blockIdx.x * blockDim.x) + threadIdx.x;
+	if (i == 0)
+		return;
+
+	if (i < n)
+	{
+		d_active_copy[i] = d_active[i];
 	}
 }
 
@@ -173,7 +355,8 @@ __global__ void sudokuKernel(Sudoku* d_sudokus, bool* d_active, int n)
 		return;
 	}
 
-	Sudoku mySudoku = d_sudokus[i];
+	Sudoku mySudoku;
+	memcpy(&mySudoku, d_sudokus + i, sizeof(Sudoku));
 	if (d_active[i] == false)
 	{
 		//continue; 
@@ -181,15 +364,23 @@ __global__ void sudokuKernel(Sudoku* d_sudokus, bool* d_active, int n)
 	}
 	//printf("Id: %d\n", i);
 
-	//if (i == 1)
-	//	PrintSudoku(mySudoku.board);
+	if (i == 1)
+		PrintSudoku(mySudoku.board);
+
+	if (!ValidateBoard(mySudoku.board, SIZE))// && i == 13) 
+	{
+		printf("Invalid board!!! - %d\n", i);
+		//printf("Tid:%d, (%d, %d), number %d, activates tid %d\n", i, (int)row, (int)col, (int)number, index);
+		//PrintSudoku(mySudoku.board);
+	}
 	//PrintRowsOrColumns(mySudoku.rowNumbers);
 	//return;
 	byte row = GetBestCount(mySudoku.rowCounts);
 	if (row == (byte)-1) 
 	{
 		//koniec
-		d_sudokus[0] = mySudoku;
+		//d_sudokus[0] = mySudoku;
+		memcpy(d_sudokus, &mySudoku, sizeof(Sudoku));
 		d_active[0] = true;
 		return;
 	}
@@ -197,9 +388,20 @@ __global__ void sudokuKernel(Sudoku* d_sudokus, bool* d_active, int n)
 	byte cellnr = cell(row, col);
 	for (byte number = 1; number <= SIZE; number++)
 	{
+		//bool correct = true;
+		//for (int k = 0; k < SIZE; k++)
+		//{
+		//	if (mySudoku.board[k][col] == number)
+		//		correct = false;
+		//	if (mySudoku.board[row][k] == number)
+		//		correct = false;
+		//	if (mySudoku.board[(cellnr / 3) * 3 + k / 3][(cellnr % 3) * 3 + k % 3] == number)
+		//		correct = false;
+		//}
 		if (!IsNumberInRowOrColumn(mySudoku.rowNumbers[row], number) &&
 			!IsNumberInRowOrColumn(mySudoku.colNumbers[col], number) &&
 			!IsNumberInRowOrColumn(mySudoku.cellNumbers[cellnr], number))
+		//if (correct)
 		{
 			mySudoku.board[row][col] = number;
 
@@ -217,7 +419,15 @@ __global__ void sudokuKernel(Sudoku* d_sudokus, bool* d_active, int n)
 
 			int index = n + 1 + (i - 1) * SIZE + (number - 1);
 			//printf("Tid:%d, (%d, %d), number %d, activates tid %d\n", i, (int)row, (int)col, (int)number, index);
-			d_sudokus[index] = mySudoku;
+
+			//if (!ValidateBoard(mySudoku.board, SIZE) && i == 13) {
+			//	printf("Invalid board!!! - %d\n", i);
+			//	printf("Tid:%d, (%d, %d), number %d, activates tid %d\n", i, (int)row, (int)col, (int)number, index);
+			//	PrintSudoku(mySudoku.board);
+			//}
+
+			memcpy(d_sudokus + index, &mySudoku, sizeof(Sudoku));
+			//d_sudokus[index] = mySudoku;
 			d_active[index] = true;
 			RemoveNumberFromRowOrColumn(mySudoku.rowNumbers[row], number);
 			RemoveNumberFromRowOrColumn(mySudoku.colNumbers[col], number);
@@ -338,6 +548,7 @@ cudaError_t PrepareSudoku(byte sudokuArray[SIZE][SIZE])
 		return cudaStatus;
 	}
 	bool *d_active;
+	bool *d_active_copy;
 	int *d_active_scan;
 
 	bool *h_active = (bool*)malloc((activeBlocks + 9 * activeBlocks + 1) * sizeof(bool));
@@ -349,7 +560,7 @@ cudaError_t PrepareSudoku(byte sudokuArray[SIZE][SIZE])
 	for (int i = 0; i < (activeBlocks + 1); i++) {
 		if (i == 1)
 		{
-			h_sudokus[i] = activeSudoku;
+			memcpy(h_sudokus + i, &activeSudoku, sizeof(Sudoku));
 		}
 	}
 
@@ -421,7 +632,7 @@ cudaError_t PrepareSudoku(byte sudokuArray[SIZE][SIZE])
 	//for (int i = 0; i < 3; i++)
 	{
 		i++;
-		//printf("Iteration: %d\n", i); // 1 3
+		printf("Iteration: %d\n", i); // 1 3
 		sudokuKernel <<<(activeBlocks + 1)/1024 + 1, 1024>>>(d_sudokus, d_active, activeBlocks);
 			// Check for any errors launching the kernel
 			cudaStatus = cudaGetLastError();
@@ -473,6 +684,16 @@ cudaError_t PrepareSudoku(byte sudokuArray[SIZE][SIZE])
 			return cudaStatus;
 		}
 
+		cudaStatus = cudaMalloc((void**)&d_active_copy, (activeBlocks + 1) * sizeof(bool));
+		if (cudaStatus != cudaSuccess) {
+			fprintf(stderr, "cudaMalloc failed!");
+			cudaFree(d_sudokus);
+			cudaFree(d_active);
+			return cudaStatus;
+		}
+		copyActiveKernel << <(activeBlocks + 1) / 1024 + 1, 1024 >> >(d_active, d_active_copy, (activeBlocks + 1));
+		cudaStatus = cudaDeviceSynchronize();
+
 		cudaFree(d_active);
 		cudaStatus = cudaMalloc((void**)&d_active, (activeBlocks + 9 * activeBlocks + 1) * sizeof(bool));
 		if (cudaStatus != cudaSuccess) {
@@ -505,7 +726,8 @@ cudaError_t PrepareSudoku(byte sudokuArray[SIZE][SIZE])
 				return cudaStatus;
 			}
 
-		copyKernel <<<(activeBlocks + 1) / 1024 + 1, 1024 >>>(d_sudokus, d_sudokus_target, d_active, d_active_scan, (activeBlocks + 1), newActive, lastActive);
+
+		copyKernel << <(activeBlocks + 1) / 1024 + 1, 1024 >> >(d_sudokus, d_sudokus_target, d_active, d_active_scan, d_active_copy, (activeBlocks + 1), newActive, lastActive);
 		// Check for any errors launching the kernel
 			cudaStatus = cudaGetLastError();
 			if (cudaStatus != cudaSuccess) {
@@ -539,10 +761,11 @@ cudaError_t PrepareSudoku(byte sudokuArray[SIZE][SIZE])
 		dev_active_scan_ptr = thrust::device_ptr<int>(d_active_scan);
 
 		cudaFree(d_sudokus);
+		cudaFree(d_active_copy);
 		d_sudokus = d_sudokus_target;
 
 		activeBlocks = newActive - 1;
-		//getchar();
+		getchar();
 	}
 
 	cudaStatus = cudaMemcpy(h_sudokus, d_sudokus, 1 * sizeof(Sudoku), cudaMemcpyDeviceToHost);
@@ -571,33 +794,33 @@ cudaError_t PrepareSudoku(byte sudokuArray[SIZE][SIZE])
 int main()
 {
 	byte sudoku[SIZE][SIZE];
+	cudaError_t cudaStatus;
+	//printf("Entry:\n");
+	//ReadSudoku(sudoku, "Entry.txt");
+	//cudaStatus = PrepareSudoku(sudoku);
+	//if (cudaStatus != cudaSuccess) {
+	//	fprintf(stderr, "PrepareSudoku failed!");
+	//	return 1;
+	//}
+	//printf("------------------------------------------------------------\n");
 
-	printf("Entry:\n");
-	ReadSudoku(sudoku, "Entry.txt");
-	cudaError_t cudaStatus = PrepareSudoku(sudoku);
-	if (cudaStatus != cudaSuccess) {
-		fprintf(stderr, "PrepareSudoku failed!");
-		return 1;
-	}
-	printf("------------------------------------------------------------\n");
+	//printf("Easy:\n");
+	//ReadSudoku(sudoku, "Easy.txt");
+	//cudaStatus = PrepareSudoku(sudoku);
+	//if (cudaStatus != cudaSuccess) {
+	//	fprintf(stderr, "PrepareSudoku failed!");
+	//	return 1;
+	//}
+	//printf("------------------------------------------------------------\n");
 
-	printf("Easy:\n");
-	ReadSudoku(sudoku, "Easy.txt");
-	cudaStatus = PrepareSudoku(sudoku);
-	if (cudaStatus != cudaSuccess) {
-		fprintf(stderr, "PrepareSudoku failed!");
-		return 1;
-	}
-	printf("------------------------------------------------------------\n");
-
-	printf("Medium:\n");
-	ReadSudoku(sudoku, "Medium.txt");
-	cudaStatus = PrepareSudoku(sudoku);
-	if (cudaStatus != cudaSuccess) {
-		fprintf(stderr, "PrepareSudoku failed!");
-		return 1;
-	}
-	printf("------------------------------------------------------------\n");
+	//printf("Medium:\n");
+	//ReadSudoku(sudoku, "Medium.txt");
+	//cudaStatus = PrepareSudoku(sudoku);
+	//if (cudaStatus != cudaSuccess) {
+	//	fprintf(stderr, "PrepareSudoku failed!");
+	//	return 1;
+	//}
+	//printf("------------------------------------------------------------\n");
 
 	printf("Hard:\n");
 	ReadSudoku(sudoku, "Hard.txt");
@@ -608,12 +831,12 @@ int main()
 	}
 	printf("------------------------------------------------------------\n");
 
-	printf("Evil:\n");
-	ReadSudoku(sudoku, "Evil.txt");
-	cudaStatus = PrepareSudoku(sudoku);
-	if (cudaStatus != cudaSuccess) {
-		fprintf(stderr, "PrepareSudoku failed!");
-		return 1;
-	}
+	//printf("Evil:\n");
+	//ReadSudoku(sudoku, "Evil.txt");
+	//cudaStatus = PrepareSudoku(sudoku);
+	//if (cudaStatus != cudaSuccess) {
+	//	fprintf(stderr, "PrepareSudoku failed!");
+	//	return 1;
+	//}
     return 0;
 }
