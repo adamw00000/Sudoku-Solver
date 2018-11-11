@@ -23,14 +23,11 @@ struct Sudoku
 	uint16_t cellNumbers[SIZE];
 	byte rowCounts[SIZE];
 	byte colCounts[SIZE];
-	byte cellCounts[SIZE];
-
-	//bool active;
 
 	__host__ __device__ Sudoku() { }
 
 	__host__ __device__ Sudoku(byte board[SIZE][SIZE], uint16_t rowNumbers[SIZE], uint16_t colNumbers[SIZE],
-		uint16_t cellNumbers[SIZE], byte rowCounts[SIZE], byte colCounts[SIZE], byte cellCounts[SIZE])
+		uint16_t cellNumbers[SIZE], byte rowCounts[SIZE], byte colCounts[SIZE])
 	{
 		for (int i = 0; i < SIZE; i++)
 		{
@@ -39,7 +36,6 @@ struct Sudoku
 			this->cellNumbers[i] = cellNumbers[i];
 			this->rowCounts[i] = rowCounts[i];
 			this->colCounts[i] = colCounts[i];
-			this->cellCounts[i] = cellCounts[i];
 			for (int j = 0; j < SIZE; j++)
 				this->board[i][j] = board[i][j];
 		}
@@ -56,7 +52,6 @@ struct Sudoku
 				this->cellNumbers[i] = old.cellNumbers[i];
 				this->rowCounts[i] = old.rowCounts[i];
 				this->colCounts[i] = old.colCounts[i];
-				this->cellCounts[i] = old.cellCounts[i];
 				for (int j = 0; j < SIZE; j++)
 					this->board[i][j] = old.board[i][j];
 			}
@@ -249,7 +244,6 @@ __global__ void sudokuKernel(Sudoku* d_sudokus, int* d_active, int n)
 			AddNumberToRowOrColumn(mySudoku.cellNumbers[cellnr], number);
 			mySudoku.rowCounts[row]++;
 			mySudoku.colCounts[col]++;
-			mySudoku.cellCounts[cellnr]++;
 
 			int index = n + 1 + (i - 1) * SIZE + (number - 1);
 			memcpy(d_sudokus + index, &mySudoku, sizeof(Sudoku));
@@ -260,7 +254,6 @@ __global__ void sudokuKernel(Sudoku* d_sudokus, int* d_active, int n)
 			RemoveNumberFromRowOrColumn(mySudoku.cellNumbers[cellnr], number);
 			mySudoku.rowCounts[row]--;
 			mySudoku.colCounts[col]--;
-			mySudoku.cellCounts[cellnr]--;
 			mySudoku.board[row][col] = 0;
 		}
 	}
@@ -319,13 +312,12 @@ void GetRowColNumbers(byte sudoku[SIZE][SIZE], uint16_t rows[], uint16_t columns
 	}
 }
 
-void GetRowColCounts(uint16_t rows[], uint16_t columns[], uint16_t cells[], byte rowCounts[], byte columnCounts[], byte cellCounts[])
+void GetRowColCounts(uint16_t rows[], uint16_t columns[], uint16_t cells[], byte rowCounts[], byte columnCounts[])
 {
 	for (byte i = 0; i < SIZE; i++)
 	{
 		rowCounts[i] = 0;
 		columnCounts[i] = 0;
-		cellCounts[i] = 0;
 	}
 
 	for (byte i = 0; i < SIZE; i++)
@@ -336,8 +328,6 @@ void GetRowColCounts(uint16_t rows[], uint16_t columns[], uint16_t cells[], byte
 				rowCounts[i]++;
 			if (IsNumberInRowOrColumn(columns[i], number))
 				columnCounts[i]++;
-			if (IsNumberInRowOrColumn(cells[i], number))
-				cellCounts[i]++;
 		}
 	}
 }
@@ -352,11 +342,11 @@ cudaError_t PrepareSudoku(byte sudokuArray[SIZE][SIZE])
 	byte cellCounts[SIZE];
 
 	GetRowColNumbers(sudokuArray, rowNumbers, colNumbers, cellNumbers);
-	GetRowColCounts(rowNumbers, colNumbers, cellNumbers, rowCounts, colCounts, cellCounts);
+	GetRowColCounts(rowNumbers, colNumbers, cellNumbers, rowCounts, colCounts);
 
 	cudaError_t cudaStatus;
 
-	Sudoku activeSudoku(sudokuArray, rowNumbers, colNumbers, cellNumbers, rowCounts, colCounts, cellCounts);
+	Sudoku activeSudoku(sudokuArray, rowNumbers, colNumbers, cellNumbers, rowCounts, colCounts);
 
 	cudaEvent_t start, stop;
 	float time;
