@@ -694,19 +694,7 @@ int main()
 	}
 	getchar();
 	printf("------------------------------------------------------------\n");
-
-	printf("Easy copy:\n");
-	if (ReadSudoku(sudoku, "Easy copy.txt"))
-		return 1;
-	cudaStatus = SolveSudoku(sudoku);
-	if (cudaStatus != cudaSuccess) {
-		printf("Solution not found!\n");
-		//fprintf(stderr, "PrepareSudoku failed!");
-		return 1;
-	}
-	getchar();
-	printf("------------------------------------------------------------\n");
-
+	
 	printf("Medium:\n");
 	if (ReadSudoku(sudoku, "Medium.txt"))
 		return 1;
