@@ -18,19 +18,15 @@ typedef uint8_t byte;
 struct Sudoku
 {
 	byte board[SIZE][SIZE];
-	uint16_t rowNumbers[SIZE];
-	uint16_t colNumbers[SIZE];
-	uint16_t cellNumbers[SIZE];
+	uint32_t constraintStructures[SIZE];
 
 	__host__ __device__ Sudoku() { }
 
-	__host__ __device__ Sudoku(byte board[SIZE][SIZE], uint16_t rowNumbers[SIZE], uint16_t colNumbers[SIZE], uint16_t cellNumbers[SIZE])
+	__host__ __device__ Sudoku(byte board[SIZE][SIZE], uint32_t constraintStructures[SIZE])
 	{
 		for (int i = 0; i < SIZE; i++)
 		{
-			this->rowNumbers[i] = rowNumbers[i];
-			this->colNumbers[i] = colNumbers[i];
-			this->cellNumbers[i] = cellNumbers[i];
+			this->constraintStructures[i] = constraintStructures[i];
 			for (int j = 0; j < SIZE; j++)
 				this->board[i][j] = board[i][j];
 		}
@@ -71,39 +67,29 @@ __host__ __device__ void BoardToString(byte arr[SIZE][SIZE], char* s)
 	s[k + 1] = '\0';
 }
 
-__host__ __device__ bool IsNumberInRowOrColumn(uint16_t structure, byte number)
+__host__ __device__ bool IsNumberInConstraintStructure(byte number, const uint32_t& rowStructure, const uint32_t& colStructure, const uint32_t& cellStructure)
 {
-	return structure & (1U << number);
+	return (rowStructure & (1U << number) || colStructure & (1U << (SIZE + number)) || cellStructure & (1U << (SIZE + SIZE + number)));
 }
 
-__host__ __device__ void AddNumberToRowOrColumn(uint16_t& structure, byte number)
+__host__ __device__ void AddNumberToConstraintStructure(byte number, uint32_t& rowStructure, uint32_t& colStructure, uint32_t& cellStructure)
 {
 	if (number != 0)
 	{
-		structure |= (1U << number);
+		rowStructure |= (1U << number);
+		colStructure |= (1U << (SIZE + number));
+		cellStructure |= (1U << (SIZE + SIZE + number));
 	}
 }
 
-__host__ __device__ void RemoveNumberFromRowOrColumn(uint16_t& structure, byte number)
+__host__ __device__ void RemoveNumberFromRowOrColumn(byte number, uint32_t& rowStructure, uint32_t& colStructure, uint32_t& cellStructure)
 {
 	if (number != 0)
 	{
-		structure &= ~(1U << number);
+		rowStructure &= ~(1U << number);
+		colStructure &= ~(1U << (SIZE + number));
+		cellStructure &= ~(1U << (SIZE + SIZE + number));
 	}
-}
-
-__host__ __device__ void PrintRowsOrColumns(uint16_t structure[])
-{
-	for (byte i = 0; i < SIZE; i++)
-	{
-		for (byte number = 1; number <= SIZE; number++)
-		{
-			printf("%d ", (int)IsNumberInRowOrColumn(structure[i], number));
-			if (number % (SIZE + 1) == SIZE)
-				printf("\n");
-		}
-	}
-	printf("\n");
 }
 
 __host__ __device__ byte cell(byte i, byte j)
@@ -177,23 +163,16 @@ __global__ void sudokuKernel(Sudoku* d_sudokus, int* d_active, int n, byte* curr
 
 	for (byte number = 1; number <= SIZE; number++)
 	{
-		if (!IsNumberInRowOrColumn(mySudoku.rowNumbers[row], number) &&
-			!IsNumberInRowOrColumn(mySudoku.colNumbers[col], number) &&
-			!IsNumberInRowOrColumn(mySudoku.cellNumbers[cellnr], number))
+		if (!IsNumberInConstraintStructure(number, mySudoku.constraintStructures[row], mySudoku.constraintStructures[col], mySudoku.constraintStructures[cellnr]))
 		{
 			mySudoku.board[row][col] = number;
-
-			AddNumberToRowOrColumn(mySudoku.rowNumbers[row], number);
-			AddNumberToRowOrColumn(mySudoku.colNumbers[col], number);
-			AddNumberToRowOrColumn(mySudoku.cellNumbers[cellnr], number);
+			AddNumberToConstraintStructure(number, mySudoku.constraintStructures[row], mySudoku.constraintStructures[col], mySudoku.constraintStructures[cellnr]);
 
 			int index = n + 1 + (i - 1) * SIZE + (number - 1);
 			memcpy(d_sudokus + index, &mySudoku, sizeof(Sudoku));
 			d_active[index] = true;
 
-			RemoveNumberFromRowOrColumn(mySudoku.rowNumbers[row], number);
-			RemoveNumberFromRowOrColumn(mySudoku.colNumbers[col], number);
-			RemoveNumberFromRowOrColumn(mySudoku.cellNumbers[cellnr], number);
+			RemoveNumberFromRowOrColumn(number, mySudoku.constraintStructures[row], mySudoku.constraintStructures[col], mySudoku.constraintStructures[cellnr]);
 			mySudoku.board[row][col] = 0;
 		}
 	}
@@ -229,13 +208,11 @@ void ReadSudoku(byte arr[SIZE][SIZE], std::string filename)
 	stream.close();
 }
 
-void GetRowColNumbers(byte sudoku[SIZE][SIZE], uint16_t rows[], uint16_t columns[], uint16_t areas[])
+void GetRowColAndCellNumbers(byte sudoku[SIZE][SIZE], uint32_t constraintStructures[])
 {
 	for (byte i = 0; i < SIZE; i++)
 	{
-		rows[i] = 0;
-		columns[i] = 0;
-		areas[i] = 0;
+		constraintStructures[i] = 0;
 	}
 
 	for (byte i = 0; i < SIZE; i++)
@@ -244,9 +221,7 @@ void GetRowColNumbers(byte sudoku[SIZE][SIZE], uint16_t rows[], uint16_t columns
 		{
 			if (sudoku[i][j] != 0)
 			{
-				AddNumberToRowOrColumn(rows[i], sudoku[i][j]);
-				AddNumberToRowOrColumn(columns[j], sudoku[i][j]);
-				AddNumberToRowOrColumn(areas[cell(i, j)], sudoku[i][j]);
+				AddNumberToConstraintStructure(sudoku[i][j], constraintStructures[i], constraintStructures[j], constraintStructures[cell(i, j)]);
 			}
 		}
 	}
@@ -274,17 +249,15 @@ void GetEmptyFields(byte sudoku[SIZE][SIZE], byte emptyFields[SIZE * SIZE])
 
 cudaError_t SolveSudoku(byte sudokuArray[SIZE][SIZE])
 {
-	uint16_t rowNumbers[SIZE];
-	uint16_t colNumbers[SIZE];
-	uint16_t cellNumbers[SIZE];
+	uint32_t constraintStructures[SIZE];
 	byte emptyFields[SIZE * SIZE];
 
-	GetRowColNumbers(sudokuArray, rowNumbers, colNumbers, cellNumbers);
+	GetRowColAndCellNumbers(sudokuArray, constraintStructures);
 	GetEmptyFields(sudokuArray, emptyFields);
 
 	cudaError_t cudaStatus;
 
-	Sudoku activeSudoku(sudokuArray, rowNumbers, colNumbers, cellNumbers);
+	Sudoku activeSudoku(sudokuArray, constraintStructures);
 
 	cudaEvent_t start, stop;
 	float time;
