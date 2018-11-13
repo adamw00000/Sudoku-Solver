@@ -179,33 +179,36 @@ __global__ void sudokuKernel(Sudoku* d_sudokus, int* d_active, int n, byte* curr
 	d_active[i] = false;
 }
 
-void ReadSudoku(byte arr[SIZE][SIZE], std::string filename)
+int ReadSudoku(byte board[SIZE][SIZE], std::string filename)
 {
 	std::ifstream stream;
 	stream.open(filename.c_str());
 
-	char c = stream.get();
-	byte i = 0, j = 0;
-
-	while (stream.good() && c != '\n') 
+	for (int i = 0; i < SIZE; i++) 
 	{
-		if (c != 'x' && c != '0')
+		for (int j = 0; j < SIZE; j++)
 		{
-			int n = atoi(&c);
-			arr[i][j] = n;
-		}
-		else
-			arr[i][j] = 0;
+			char c = stream.get();
+			while (stream.good() && c == '\n')
+				c = stream.get();
 
-		c = stream.get();
-		j++;
-		if (j == SIZE)
-		{
-			j = 0;
-			i++;
+			if (!stream.good())
+			{
+				printf("%s - Invalid file format!\n", filename.c_str());
+				return -1;
+			}
+			if (c != 'x' && c != '0')
+			{
+				int n = atoi(&c);
+				board[i][j] = n;
+			}
+			else
+				board[i][j] = 0;
 		}
 	}
+
 	stream.close();
+	return 0;
 }
 
 void GetRowColAndCellNumbers(byte sudoku[SIZE][SIZE], uint32_t constraintStructures[])
@@ -383,6 +386,9 @@ cudaError_t SolveSudoku(byte sudokuArray[SIZE][SIZE])
 		free(h_active);
 		free(h_sudokus);
 		cudaFree(d_sudokus);
+		cudaFree(d_active);
+		cudaFree(d_active_scan);
+		cudaFree(d_active_field);
 		return cudaStatus;
 	}
 
@@ -419,6 +425,7 @@ cudaError_t SolveSudoku(byte sudokuArray[SIZE][SIZE])
 				cudaFree(d_sudokus);
 				cudaFree(d_active);
 				cudaFree(d_active_scan);
+				cudaFree(d_active_field);
 				return cudaStatus;
 			}
 
@@ -430,6 +437,7 @@ cudaError_t SolveSudoku(byte sudokuArray[SIZE][SIZE])
 				cudaFree(d_sudokus);
 				cudaFree(d_active);
 				cudaFree(d_active_scan);
+				cudaFree(d_active_field);
 				return cudaStatus;
 			}
 
@@ -464,6 +472,7 @@ cudaError_t SolveSudoku(byte sudokuArray[SIZE][SIZE])
 			cudaFree(d_sudokus_target);
 			cudaFree(d_active);
 			cudaFree(d_active_scan);
+			cudaFree(d_active_field);
 			return cudaStatus;
 		}
 
@@ -482,6 +491,7 @@ cudaError_t SolveSudoku(byte sudokuArray[SIZE][SIZE])
 			cudaFree(d_active);
 			cudaFree(d_active_scan);
 			cudaFree(d_active_copy);
+			cudaFree(d_active_field);
 			return cudaStatus;
 		}
 		
@@ -496,6 +506,7 @@ cudaError_t SolveSudoku(byte sudokuArray[SIZE][SIZE])
 				cudaFree(d_active);
 				cudaFree(d_active_scan);
 				cudaFree(d_active_copy);
+				cudaFree(d_active_field);
 				return cudaStatus;
 			}
 
@@ -509,6 +520,7 @@ cudaError_t SolveSudoku(byte sudokuArray[SIZE][SIZE])
 				cudaFree(d_active);
 				cudaFree(d_active_scan);
 				cudaFree(d_active_copy);
+				cudaFree(d_active_field);
 				return cudaStatus;
 			}
 
@@ -529,6 +541,7 @@ cudaError_t SolveSudoku(byte sudokuArray[SIZE][SIZE])
 			cudaFree(d_active);
 			cudaFree(d_active_scan);
 			cudaFree(d_active_copy);
+			cudaFree(d_active_field);
 			return cudaStatus;
 		}
 		
@@ -545,6 +558,7 @@ cudaError_t SolveSudoku(byte sudokuArray[SIZE][SIZE])
 				cudaFree(d_active);
 				cudaFree(d_active_scan);
 				cudaFree(d_active_copy);
+				cudaFree(d_active_field);
 				return cudaStatus;
 			}
 
@@ -558,6 +572,7 @@ cudaError_t SolveSudoku(byte sudokuArray[SIZE][SIZE])
 				cudaFree(d_active);
 				cudaFree(d_active_scan);
 				cudaFree(d_active_copy);
+				cudaFree(d_active_field);
 				return cudaStatus;
 			}
 
@@ -573,6 +588,7 @@ cudaError_t SolveSudoku(byte sudokuArray[SIZE][SIZE])
 				cudaFree(d_active);
 				cudaFree(d_active_scan);
 				cudaFree(d_active_copy);
+				cudaFree(d_active_field);
 				return cudaStatus;
 			}
 
@@ -586,6 +602,7 @@ cudaError_t SolveSudoku(byte sudokuArray[SIZE][SIZE])
 				cudaFree(d_active);
 				cudaFree(d_active_scan);
 				cudaFree(d_active_copy);
+				cudaFree(d_active_field);
 				return cudaStatus;
 			}
 
@@ -605,6 +622,7 @@ cudaError_t SolveSudoku(byte sudokuArray[SIZE][SIZE])
 			cudaFree(d_active);
 			cudaFree(d_active_scan);
 			cudaFree(d_active_copy);
+			cudaFree(d_active_field);
 			return cudaStatus;
 		}
 		
@@ -625,6 +643,7 @@ cudaError_t SolveSudoku(byte sudokuArray[SIZE][SIZE])
 		cudaFree(d_sudokus);
 		cudaFree(d_active);
 		cudaFree(d_active_scan);
+		cudaFree(d_active_field);
 		return cudaStatus;
 	}
 
@@ -653,7 +672,8 @@ int main()
 	cudaError_t cudaStatus;
 
 	printf("Entry:\n");
-	ReadSudoku(sudoku, "Entry.txt");
+	if (ReadSudoku(sudoku, "Entry.txt"))
+		return 1;
 	cudaStatus = SolveSudoku(sudoku);
 	if (cudaStatus != cudaSuccess) {
 		printf("Solution not found!\n");
@@ -664,7 +684,20 @@ int main()
 	printf("------------------------------------------------------------\n");
 
 	printf("Easy:\n");
-	ReadSudoku(sudoku, "Easy.txt");
+	if (ReadSudoku(sudoku, "Easy.txt"))
+		return 1;
+	cudaStatus = SolveSudoku(sudoku);
+	if (cudaStatus != cudaSuccess) {
+		printf("Solution not found!\n");
+		//fprintf(stderr, "PrepareSudoku failed!");
+		return 1;
+	}
+	getchar();
+	printf("------------------------------------------------------------\n");
+
+	printf("Easy copy:\n");
+	if (ReadSudoku(sudoku, "Easy copy.txt"))
+		return 1;
 	cudaStatus = SolveSudoku(sudoku);
 	if (cudaStatus != cudaSuccess) {
 		printf("Solution not found!\n");
@@ -675,7 +708,8 @@ int main()
 	printf("------------------------------------------------------------\n");
 
 	printf("Medium:\n");
-	ReadSudoku(sudoku, "Medium.txt");
+	if (ReadSudoku(sudoku, "Medium.txt"))
+		return 1;
 	cudaStatus = SolveSudoku(sudoku);
 	if (cudaStatus != cudaSuccess) {
 		printf("Solution not found!\n");
@@ -686,7 +720,8 @@ int main()
 	printf("------------------------------------------------------------\n");
 
 	printf("Hard:\n");
-	ReadSudoku(sudoku, "Hard.txt");
+	if (ReadSudoku(sudoku, "Hard.txt"))
+		return 1;
 	cudaStatus = SolveSudoku(sudoku);
 	if (cudaStatus != cudaSuccess) {
 		printf("Solution not found!\n");
@@ -697,7 +732,8 @@ int main()
 	printf("------------------------------------------------------------\n");
 
 	printf("Evil:\n");
-	ReadSudoku(sudoku, "Evil.txt");
+	if (ReadSudoku(sudoku, "Evil.txt"))
+		return 1;
 	cudaStatus = SolveSudoku(sudoku);
 	if (cudaStatus != cudaSuccess) {
 		printf("Solution not found!\n");
