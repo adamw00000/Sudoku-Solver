@@ -3,4 +3,17 @@
   <ItemGroup>
     <CudaCompile Include="kernel.cu" />
   </ItemGroup>
+  <ItemGroup>
+    <Text Include="Entry.txt" />
+    <Text Include="Easy.txt" />
+    <Text Include="Evil.txt" />
+    <Text Include="Hard.txt" />
+    <Text Include="Medium.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="SudokuCPU.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="SudokuCPU.cpp" />
+  </ItemGroup>
 </Project>

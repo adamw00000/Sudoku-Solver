@@ -1,6 +1,7 @@
 
 #include "cuda_runtime.h"
 #include "device_launch_parameters.h"
+#include "SudokuCPU.h"
 
 #include <stdio.h>
 #include <string>
@@ -222,7 +223,7 @@ int ReadSudoku(byte board[SIZE][SIZE], std::string filename)
 	return 0;
 }
 
-void GetRowColAndCellNumbers(byte sudoku[SIZE][SIZE], uint32_t constraintStructures[])
+void GetConstraintStructures(byte sudoku[SIZE][SIZE], uint32_t constraintStructures[])
 {
 	for (byte i = 0; i < SIZE; i++)
 	{
@@ -266,7 +267,7 @@ cudaError_t SolveSudoku(byte sudokuArray[SIZE][SIZE])
 	uint32_t constraintStructures[SIZE];
 	byte emptyFields[SIZE * SIZE];
 
-	GetRowColAndCellNumbers(sudokuArray, constraintStructures);
+	GetConstraintStructures(sudokuArray, constraintStructures);
 	GetEmptyFields(sudokuArray, emptyFields);
 
 	cudaError_t cudaStatus;
@@ -675,6 +676,11 @@ cudaError_t SolveSudoku(byte sudokuArray[SIZE][SIZE])
 	cudaFree(d_sudokus);
 	cudaFree(d_active);
 	cudaFree(d_active_scan);
+
+	SudokuCPU CPUSudoku(sudokuArray, constraintStructures);
+	CPUSudoku.Solve();
+	printf("CPU result:\n");
+	PrintSudoku(CPUSudoku.result);
 
 	return cudaStatus;
 }
