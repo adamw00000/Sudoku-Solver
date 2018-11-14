@@ -802,5 +802,17 @@ int main()
 		return 1;
 	}
 	getchar();
+	printf("------------------------------------------------------------\n");
+
+	printf("Wojtek:\n");
+	if (ReadSudoku(sudoku, "Wojtek.txt"))
+		return 1;
+	cudaStatus = SolveSudoku(sudoku);
+	if (cudaStatus != cudaSuccess) {
+		printf("Solution not found!\n");
+		//fprintf(stderr, "PrepareSudoku failed!");
+		return 1;
+	}
+	getchar();
     return 0;
 }
