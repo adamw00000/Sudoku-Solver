@@ -731,7 +731,7 @@ cudaError_t SolveSudoku(byte sudokuArray[SIZE][SIZE])
 	std::clock_t c_end = std::clock();
 	
 	double time_elapsed_ms = 1000.0 * (c_end-c_start) / CLOCKS_PER_SEC;
-	printf("Time for the kernel: %d ms\n", time_elapsed_ms);
+	printf("Time for CPU: %lf ms\n", time_elapsed_ms);
 
 	printf("CPU result:\n");
 	PrintSudoku(result);
