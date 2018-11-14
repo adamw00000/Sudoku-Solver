@@ -10,10 +10,4 @@
     <Text Include="Hard.txt" />
     <Text Include="Medium.txt" />
   </ItemGroup>
-  <ItemGroup>
-    <ClInclude Include="SudokuCPU.h" />
-  </ItemGroup>
-  <ItemGroup>
-    <ClCompile Include="SudokuCPU.cpp" />
-  </ItemGroup>
 </Project>

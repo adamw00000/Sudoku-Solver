@@ -170,12 +170,6 @@ copy "$(CudaToolkitBinDir)\cudart*.dll" "$(OutDir)"</Command>
       <DeploymentContent>true</DeploymentContent>
     </Text>
   </ItemGroup>
-  <ItemGroup>
-    <ClInclude Include="SudokuCPU.h" />
-  </ItemGroup>
-  <ItemGroup>
-    <ClCompile Include="SudokuCPU.cpp" />
-  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
     <Import Project="$(VCTargetsPath)\BuildCustomizations\CUDA 8.0.targets" />
