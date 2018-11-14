@@ -261,6 +261,54 @@ void GetEmptyFields(byte sudoku[SIZE][SIZE], byte emptyFields[SIZE * SIZE])
 	}
 }
 
+void SolveCPU(byte board[SIZE][SIZE], uint32_t constraintStructures[SIZE], byte emptyFields[SIZE], byte result[SIZE][SIZE])
+{
+	SolveCPU(0, board, constraintStructures, emptyFields, result);
+}
+
+bool SolveCPU(int i, byte board[SIZE][SIZE], uint32_t constraintStructures[SIZE], byte emptyFields[SIZE], byte result[SIZE][SIZE])
+{
+	if (i == SIZE * SIZE || emptyFields[i] == (byte)-1)
+	{
+		printf("CPU solution found!\n");
+		for (int i = 0; i < SIZE; i++)
+		{
+			for (int j = 0; j < SIZE; j++)
+			{
+				result[i][j] = board[i][j];
+			}
+		}
+		return true;
+	}
+
+	int field = emptyFields[i];
+	byte row = field / SIZE;
+	byte col = field % SIZE;
+	
+	byte cellnr = cell(row, col);
+	
+	if (board[row][col] == 0)
+	{
+		for (byte number = 1; number <= SIZE; number++)
+		{
+			if (!IsNumberInConstraintStructure(number, constraintStructures[row], constraintStructures[col], constraintStructures[cellnr]))
+			{
+				board[row][col] = number;
+				AddNumberToConstraintStructure(number, constraintStructures[row], constraintStructures[col], constraintStructures[cellnr]);
+
+				i++;
+				if (Solve(i, board, constraintStructures, emptyFields, result))
+					return true;
+				i--;
+
+				RemoveNumberFromRowOrColumn(number, constraintStructures[row], constraintStructures[col], constraintStructures[cellnr]);
+				board[row][col] = 0;
+			}
+		}
+	}
+	return false;
+}
+
 cudaError_t SolveSudoku(byte sudokuArray[SIZE][SIZE])
 {
 	uint32_t constraintStructures[SIZE];
@@ -677,60 +725,12 @@ cudaError_t SolveSudoku(byte sudokuArray[SIZE][SIZE])
 	cudaFree(d_active_scan);
 
 	byte result[SIZE][SIZE];
-	SolveCPU(board, constraintStructures, emptyFields, result);
+	SolveCPU(activeSudoku, constraintStructures, emptyFields, result);
 
 	printf("CPU result:\n");
 	PrintSudoku(result);
 
 	return cudaStatus;
-}
-
-void SolveCPU(byte board[SIZE][SIZE], uint32_t constraintStructures[SIZE], byte emptyFields[SIZE], byte result[SIZE][SIZE])
-{
-	SolveCPU(0, board, constraintStructures, emptyFields, result);
-}
-
-bool SolveCPU(int i, byte board[SIZE][SIZE], uint32_t constraintStructures[SIZE], byte emptyFields[SIZE], byte result[SIZE][SIZE])
-{
-	if (i == SIZE * SIZE || emptyFields[i] == (byte)-1)
-	{
-		printf("CPU solution found!\n");
-		for (int i = 0; i < SIZE; i++)
-		{
-			for (int j = 0; j < SIZE; j++)
-			{
-				result[i][j] = board[i][j];
-			}
-		}
-		return true;
-	}
-
-	int field = emptyFields[i];
-	byte row = field / SIZE;
-	byte col = field % SIZE;
-	
-	byte cellnr = cell(row, col);
-	
-	if (board[row][col] == 0)
-	{
-		for (byte number = 1; number <= SIZE; number++)
-		{
-			if (!IsNumberInConstraintStructure(number, constraintStructures[row], constraintStructures[col], constraintStructures[cellnr]))
-			{
-				board[row][col] = number;
-				AddNumberToConstraintStructure(number, constraintStructures[row], constraintStructures[col], constraintStructures[cellnr]);
-
-				i++;
-				if (Solve(i, board, constraintStructures, emptyFields, result))
-					return true;
-				i--;
-
-				RemoveNumberFromRowOrColumn(number, constraintStructures[row], constraintStructures[col], constraintStructures[cellnr]);
-				board[row][col] = 0;
-			}
-		}
-	}
-	return false;
 }
 
 int main()
