@@ -292,7 +292,7 @@ bool SolveCPU(int i, byte board[SIZE][SIZE], uint32_t constraintStructures[SIZE]
 				AddNumberToConstraintStructure(number, constraintStructures[row], constraintStructures[col], constraintStructures[cellnr]);
 
 				i++;
-				if (Solve(i, board, constraintStructures, emptyFields, result))
+				if (SolveCPU(i, board, constraintStructures, emptyFields, result))
 					return true;
 				i--;
 
@@ -725,7 +725,7 @@ cudaError_t SolveSudoku(byte sudokuArray[SIZE][SIZE])
 	cudaFree(d_active_scan);
 
 	byte result[SIZE][SIZE];
-	SolveCPU(activeSudoku, constraintStructures, emptyFields, result);
+	SolveCPU(sudokuArray, constraintStructures, emptyFields, result);
 
 	printf("CPU result:\n");
 	PrintSudoku(result);
