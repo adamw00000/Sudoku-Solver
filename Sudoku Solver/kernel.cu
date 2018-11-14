@@ -685,12 +685,12 @@ cudaError_t SolveSudoku(byte sudokuArray[SIZE][SIZE])
 	return cudaStatus;
 }
 
-void SolveCPU(byte board[SIZE][SIZE], int32_t constraintStructures[SIZE], byte emptyFields[SIZE], byte result[SIZE][SIZE])
+void SolveCPU(byte board[SIZE][SIZE], uint32_t constraintStructures[SIZE], byte emptyFields[SIZE], byte result[SIZE][SIZE])
 {
 	SolveCPU(0, board, constraintStructures, emptyFields, result);
 }
 
-bool SolveCPU(int i, byte board[SIZE][SIZE], int32_t constraintStructures[SIZE], byte emptyFields[SIZE], byte result[SIZE][SIZE])
+bool SolveCPU(int i, byte board[SIZE][SIZE], uint32_t constraintStructures[SIZE], byte emptyFields[SIZE], byte result[SIZE][SIZE])
 {
 	if (i == SIZE * SIZE || emptyFields[i] == (byte)-1)
 	{
