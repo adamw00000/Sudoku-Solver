@@ -15,9 +15,12 @@ class SudokuCPU
 	byte cell(byte i, byte j);
 	void GetEmptyFields();
 	void PrintSudoku(byte arr[SIZE][SIZE]);
+
+	void Solve(int);
 	bool IsNumberInConstraintStructure(byte number, const uint32_t & rowStructure, const uint32_t & colStructure, const uint32_t & cellStructure);
 	void AddNumberToConstraintStructure(byte number, uint32_t & rowStructure, uint32_t & colStructure, uint32_t & cellStructure);
 	void RemoveNumberFromRowOrColumn(byte number, uint32_t & rowStructure, uint32_t & colStructure, uint32_t & cellStructure);
+	
 	void SetResult();
 public:
 	byte result[SIZE][SIZE];
