@@ -12,6 +12,26 @@ SudokuCPU::SudokuCPU(byte board[SIZE][SIZE], uint32_t constraintStructures[SIZE]
 	}
 }
 
+void SudokuCPU::GetEmptyFields()
+{
+	int k = 0;
+	for (byte i = 0; i < SIZE; i++)
+	{
+		for (byte j = 0; j < SIZE; j++)
+		{
+			if (sudoku[i][j] == 0)
+			{
+				emptyFields[k] = i * SIZE + j;
+				k++;
+			}
+		}
+	}
+	for (; k < SIZE * SIZE; k++)
+	{
+		emptyFields[k] = -1;
+	}
+}
+
 void SudokuCPU::SetResult()
 {
 	resultSet = true;
@@ -49,55 +69,42 @@ void SudokuCPU::PrintSudoku(byte arr[SIZE][SIZE])
 
 void SudokuCPU::Solve()
 {
+	Solve(0);
+}
+void SudokuCPU::Solve(int i)
+{
+	if (i == SIZE * SIZE || emptyFields[i] == (byte)-1)
+	{
+		printf("CPU solution found!\n");
+		SetResult();
+		return;
+	}
 	if (resultSet)
 		return;
 
-	int emptyCells = 0;
-
-	for (int i = 0; i < SIZE; i++)
+	int field = emptyFields[i];
+	byte row = field / SIZE;
+	byte col = field % SIZE;
+	
+	byte cellnr = cell(row, col);
+	
+	if (board[row][col] == 0)
 	{
-		for (int j = 0; j < SIZE; j++)
+		for (byte number = 1; number <= SIZE; number++)
 		{
-			if (board[i][j] == 0)
+			if (!IsNumberInConstraintStructure(number, constraintStructures[row], constraintStructures[col], constraintStructures[cellnr]))
 			{
-				emptyCells++;
-				//printf("Inserting at (%d, %d)\n", i, j);
-				//PrintSudoku(board);
-				//getchar();
-				//printf("Empty cells: %d\n", emptyCells);
+				board[row][col] = number;
+				AddNumberToConstraintStructure(number, constraintStructures[row], constraintStructures[col], constraintStructures[cellnr]);
 
-				byte row = i;
-				byte col = j;
-				byte cellnr = cell(i, j);
-				byte availableNumbers = 0;
-				for (byte number = 1; number <= SIZE; number++)
-				{
-					if (!IsNumberInConstraintStructure(number, constraintStructures[row], constraintStructures[col], constraintStructures[cellnr]))
-					{
-						availableNumbers++;
+				i++;
+				Solve(i);
+				i--;
 
-						board[row][col] = number;
-						AddNumberToConstraintStructure(number, constraintStructures[row], constraintStructures[col], constraintStructures[cellnr]);
-
-						printf("Inserting at (%d, %d), number: %d\n", i, j, number);
-						PrintSudoku(board);
-						getchar();
-						Solve();
-
-						RemoveNumberFromRowOrColumn(number, constraintStructures[row], constraintStructures[col], constraintStructures[cellnr]);
-						board[row][col] = 0;
-					}
-				}
-				if (availableNumbers == 0)
-					return;
+				RemoveNumberFromRowOrColumn(number, constraintStructures[row], constraintStructures[col], constraintStructures[cellnr]);
+				board[row][col] = 0;
 			}
 		}
-	}
-
-	if (emptyCells == 0)
-	{
-		printf("CPU solved\n");
-		SetResult();
 	}
 }
 
