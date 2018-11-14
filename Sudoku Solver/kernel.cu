@@ -261,11 +261,6 @@ void GetEmptyFields(byte sudoku[SIZE][SIZE], byte emptyFields[SIZE * SIZE])
 	}
 }
 
-void SolveCPU(byte board[SIZE][SIZE], uint32_t constraintStructures[SIZE], byte emptyFields[SIZE], byte result[SIZE][SIZE])
-{
-	SolveCPU(0, board, constraintStructures, emptyFields, result);
-}
-
 bool SolveCPU(int i, byte board[SIZE][SIZE], uint32_t constraintStructures[SIZE], byte emptyFields[SIZE], byte result[SIZE][SIZE])
 {
 	if (i == SIZE * SIZE || emptyFields[i] == (byte)-1)
@@ -307,6 +302,11 @@ bool SolveCPU(int i, byte board[SIZE][SIZE], uint32_t constraintStructures[SIZE]
 		}
 	}
 	return false;
+}
+
+void SolveCPU(byte board[SIZE][SIZE], uint32_t constraintStructures[SIZE], byte emptyFields[SIZE], byte result[SIZE][SIZE])
+{
+	SolveCPU(0, board, constraintStructures, emptyFields, result);
 }
 
 cudaError_t SolveSudoku(byte sudokuArray[SIZE][SIZE])
