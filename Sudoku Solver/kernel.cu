@@ -1,7 +1,6 @@
 
 #include "cuda_runtime.h"
 #include "device_launch_parameters.h"
-#include "SudokuCPU.h"
 
 #include <stdio.h>
 #include <string>
@@ -677,12 +676,61 @@ cudaError_t SolveSudoku(byte sudokuArray[SIZE][SIZE])
 	cudaFree(d_active);
 	cudaFree(d_active_scan);
 
-	SudokuCPU CPUSudoku(sudokuArray, constraintStructures);
-	CPUSudoku.Solve();
+	byte result[SIZE][SIZE];
+	SolveCPU(board, constraintStructures, emptyFields, result);
+
 	printf("CPU result:\n");
-	PrintSudoku(CPUSudoku.result);
+	PrintSudoku(result);
 
 	return cudaStatus;
+}
+
+void SolveCPU(byte board[SIZE][SIZE], int32_t constraintStructures[SIZE], byte emptyFields[SIZE], byte result[SIZE][SIZE])
+{
+	SolveCPU(0, board, constraintStructures, emptyFields, result);
+}
+
+bool SolveCPU(int i, byte board[SIZE][SIZE], int32_t constraintStructures[SIZE], byte emptyFields[SIZE], byte result[SIZE][SIZE])
+{
+	if (i == SIZE * SIZE || emptyFields[i] == (byte)-1)
+	{
+		printf("CPU solution found!\n");
+		for (int i = 0; i < SIZE; i++)
+		{
+			for (int j = 0; j < SIZE; j++)
+			{
+				result[i][j] = board[i][j];
+			}
+		}
+		return true;
+	}
+
+	int field = emptyFields[i];
+	byte row = field / SIZE;
+	byte col = field % SIZE;
+	
+	byte cellnr = cell(row, col);
+	
+	if (board[row][col] == 0)
+	{
+		for (byte number = 1; number <= SIZE; number++)
+		{
+			if (!IsNumberInConstraintStructure(number, constraintStructures[row], constraintStructures[col], constraintStructures[cellnr]))
+			{
+				board[row][col] = number;
+				AddNumberToConstraintStructure(number, constraintStructures[row], constraintStructures[col], constraintStructures[cellnr]);
+
+				i++;
+				if (Solve(i, board, constraintStructures, emptyFields, result))
+					return true;
+				i--;
+
+				RemoveNumberFromRowOrColumn(number, constraintStructures[row], constraintStructures[col], constraintStructures[cellnr]);
+				board[row][col] = 0;
+			}
+		}
+	}
+	return false;
 }
 
 int main()
