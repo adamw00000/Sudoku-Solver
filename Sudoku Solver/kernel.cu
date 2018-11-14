@@ -9,6 +9,7 @@
 #include <thrust/device_vector.h>
 #include <thrust/extrema.h>
 #include <set>
+#include <ctime>
 
 
 #define SIZE 9
@@ -265,7 +266,6 @@ bool SolveCPU(int i, byte board[SIZE][SIZE], uint32_t constraintStructures[SIZE]
 {
 	if (i == SIZE * SIZE || emptyFields[i] == (byte)-1)
 	{
-		printf("CPU solution found!\n");
 		for (int i = 0; i < SIZE; i++)
 		{
 			for (int j = 0; j < SIZE; j++)
@@ -725,7 +725,13 @@ cudaError_t SolveSudoku(byte sudokuArray[SIZE][SIZE])
 	cudaFree(d_active_scan);
 
 	byte result[SIZE][SIZE];
+	
+	std::clock_t c_start = std::clock();
 	SolveCPU(sudokuArray, constraintStructures, emptyFields, result);
+	std::clock_t c_end = std::clock();
+	
+	double time_elapsed_ms = 1000.0 * (c_end-c_start) / CLOCKS_PER_SEC;
+	printf("Time for the kernel: %d ms\n", time_elapsed_ms);
 
 	printf("CPU result:\n");
 	PrintSudoku(result);
