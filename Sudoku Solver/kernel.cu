@@ -177,11 +177,12 @@ __global__ void sudokuKernel(Sudoku* d_sudokus, int* d_active, int n, byte* curr
 		}
 	}
 	
-	number = SIZE;
+	byte number = SIZE;
 	if (!IsNumberInConstraintStructure(number, mySudoku.constraintStructures[row], mySudoku.constraintStructures[col], mySudoku.constraintStructures[cellnr]))
 	{
 		mySudoku.board[row][col] = number;
 		AddNumberToConstraintStructure(number, mySudoku.constraintStructures[row], mySudoku.constraintStructures[col], mySudoku.constraintStructures[cellnr]);
+		memcpy(d_sudokus + i, &mySudoku, sizeof(Sudoku));
 	}
 	else
 	{
