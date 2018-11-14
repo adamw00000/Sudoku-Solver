@@ -161,14 +161,14 @@ __global__ void sudokuKernel(Sudoku* d_sudokus, int* d_active, int n, byte* curr
 	byte col = (*currentField) % SIZE;
 	byte cellnr = cell(row, col);
 
-	for (byte number = 1; number <= SIZE; number++)
+	for (byte number = 1; number <= SIZE - 1; number++)
 	{
 		if (!IsNumberInConstraintStructure(number, mySudoku.constraintStructures[row], mySudoku.constraintStructures[col], mySudoku.constraintStructures[cellnr]))
 		{
 			mySudoku.board[row][col] = number;
 			AddNumberToConstraintStructure(number, mySudoku.constraintStructures[row], mySudoku.constraintStructures[col], mySudoku.constraintStructures[cellnr]);
 
-			int index = n + 1 + (i - 1) * SIZE + (number - 1);
+			int index = n + 1 + (i - 1) * (SIZE - 1) + (number - 1);
 			memcpy(d_sudokus + index, &mySudoku, sizeof(Sudoku));
 			d_active[index] = true;
 
@@ -176,7 +176,17 @@ __global__ void sudokuKernel(Sudoku* d_sudokus, int* d_active, int n, byte* curr
 			mySudoku.board[row][col] = 0;
 		}
 	}
-	d_active[i] = false;
+	
+	number = SIZE;
+	if (!IsNumberInConstraintStructure(number, mySudoku.constraintStructures[row], mySudoku.constraintStructures[col], mySudoku.constraintStructures[cellnr]))
+	{
+		mySudoku.board[row][col] = number;
+		AddNumberToConstraintStructure(number, mySudoku.constraintStructures[row], mySudoku.constraintStructures[col], mySudoku.constraintStructures[cellnr]);
+	}
+	else
+	{
+		d_active[i] = false;
+	}
 }
 
 int ReadSudoku(byte board[SIZE][SIZE], std::string filename)
@@ -284,7 +294,7 @@ cudaError_t SolveSudoku(byte sudokuArray[SIZE][SIZE])
 	int *d_active_copy;
 	int *d_active_scan;
 
-	int *h_active = (int*)malloc((activeBlocks + 9 * activeBlocks + 1) * sizeof(int));
+	int *h_active = (int*)malloc((9 * activeBlocks + 1) * sizeof(int));
 	if (h_active == NULL) {
 		fprintf(stderr, "malloc failed!");
 		return cudaStatus;
@@ -297,7 +307,7 @@ cudaError_t SolveSudoku(byte sudokuArray[SIZE][SIZE])
 		}
 	}
 
-	for (int i = 0; i < (activeBlocks + 9 * activeBlocks + 1); i++) {
+	for (int i = 0; i < (9 * activeBlocks + 1); i++) {
 		if (i == 1)
 		{
 			h_active[i] = true;
@@ -308,7 +318,7 @@ cudaError_t SolveSudoku(byte sudokuArray[SIZE][SIZE])
 		}
 	}
 
-	cudaStatus = cudaMalloc((void**)&d_sudokus, (activeBlocks + 9 * activeBlocks + 1) * sizeof(Sudoku));
+	cudaStatus = cudaMalloc((void**)&d_sudokus, (9 * activeBlocks + 1) * sizeof(Sudoku));
 	if (cudaStatus != cudaSuccess) {
 		cudaEventRecord(stop, 0);
 		cudaEventSynchronize(stop);
@@ -332,7 +342,7 @@ cudaError_t SolveSudoku(byte sudokuArray[SIZE][SIZE])
 		return cudaStatus;
 	}
 
-	cudaStatus = cudaMalloc((void**)&d_active, (activeBlocks + 9 * activeBlocks + 1) * sizeof(int));
+	cudaStatus = cudaMalloc((void**)&d_active, (9 * activeBlocks + 1) * sizeof(int));
 	if (cudaStatus != cudaSuccess) {
 		cudaEventRecord(stop, 0);
 		cudaEventSynchronize(stop);
@@ -347,7 +357,7 @@ cudaError_t SolveSudoku(byte sudokuArray[SIZE][SIZE])
 		return cudaStatus;
 	}
 
-	cudaStatus = cudaMalloc((void**)&d_active_scan, (activeBlocks + 9 * activeBlocks + 1) * sizeof(int));
+	cudaStatus = cudaMalloc((void**)&d_active_scan, (9 * activeBlocks + 1) * sizeof(int));
 	if (cudaStatus != cudaSuccess) {
 		cudaEventRecord(stop, 0);
 		cudaEventSynchronize(stop);
@@ -363,7 +373,7 @@ cudaError_t SolveSudoku(byte sudokuArray[SIZE][SIZE])
 		return cudaStatus;
 	}
 
-	cudaStatus = cudaMemcpy(d_active, h_active, (activeBlocks + 9 * activeBlocks + 1) * sizeof(int), cudaMemcpyHostToDevice);
+	cudaStatus = cudaMemcpy(d_active, h_active, (9 * activeBlocks + 1) * sizeof(int), cudaMemcpyHostToDevice);
 	if (cudaStatus != cudaSuccess) {
 		fprintf(stderr, "cudaMemcpy failed!");
 		free(h_active);
@@ -447,7 +457,7 @@ cudaError_t SolveSudoku(byte sudokuArray[SIZE][SIZE])
 			break;
 		}
 
-		activeBlocks = activeBlocks + activeBlocks * 9;
+		activeBlocks = activeBlocks * 9;
 
 		dev_active_ptr[0] = true;
 		thrust::exclusive_scan(dev_active_ptr, dev_active_ptr + activeBlocks + 1, dev_active_scan_ptr);
@@ -458,7 +468,7 @@ cudaError_t SolveSudoku(byte sudokuArray[SIZE][SIZE])
 		if (lastActive)
 			newActive++;
 
-		cudaStatus = cudaMalloc((void**)&d_sudokus_target, (activeBlocks + 9 * activeBlocks + 1) * sizeof(Sudoku));
+		cudaStatus = cudaMalloc((void**)&d_sudokus_target, (9 * activeBlocks + 1) * sizeof(Sudoku));
 		if (cudaStatus != cudaSuccess) {
 			cudaEventRecord(stop, 0);
 			cudaEventSynchronize(stop);
@@ -526,7 +536,7 @@ cudaError_t SolveSudoku(byte sudokuArray[SIZE][SIZE])
 
 
 		cudaFree(d_active);
-		cudaStatus = cudaMalloc((void**)&d_active, (activeBlocks + 9 * activeBlocks + 1) * sizeof(int));
+		cudaStatus = cudaMalloc((void**)&d_active, (9 * activeBlocks + 1) * sizeof(int));
 		if (cudaStatus != cudaSuccess) {
 			cudaEventRecord(stop, 0);
 			cudaEventSynchronize(stop);
@@ -547,7 +557,7 @@ cudaError_t SolveSudoku(byte sudokuArray[SIZE][SIZE])
 		
 		dev_active_ptr = thrust::device_ptr<int>(d_active);
 
-		activeResetKernel <<<(activeBlocks + 9 * activeBlocks + 1) / 1024 + 1, 1024 >>>(d_active, (activeBlocks + 9 * activeBlocks + 1));
+		activeResetKernel <<<(9 * activeBlocks + 1) / 1024 + 1, 1024 >>>(d_active, (9 * activeBlocks + 1));
 			cudaStatus = cudaGetLastError();
 			if (cudaStatus != cudaSuccess) {
 				fprintf(stderr, "activeResetKernel launch failed: %s\n", cudaGetErrorString(cudaStatus));
@@ -607,7 +617,7 @@ cudaError_t SolveSudoku(byte sudokuArray[SIZE][SIZE])
 			}
 
 		cudaFree(d_active_scan);
-		cudaStatus = cudaMalloc((void**)&d_active_scan, (activeBlocks + 9 * activeBlocks + 1) * sizeof(int));
+		cudaStatus = cudaMalloc((void**)&d_active_scan, (9 * activeBlocks + 1) * sizeof(int));
 		if (cudaStatus != cudaSuccess) {
 			cudaEventRecord(stop, 0);
 			cudaEventSynchronize(stop);
