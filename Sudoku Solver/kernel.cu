@@ -458,18 +458,20 @@ cudaError_t SolveSudoku(byte sudokuArray[SIZE][SIZE])
 			break;
 		}
 
-		activeBlocks = activeBlocks * 9;
+		int oldAllocatedBlocks = activeBlocks * 9 + 1;
 
 		dev_active_ptr[0] = true;
-		thrust::exclusive_scan(dev_active_ptr, dev_active_ptr + activeBlocks + 1, dev_active_scan_ptr);
+		thrust::exclusive_scan(dev_active_ptr, dev_active_ptr + oldAllocatedBlocks, dev_active_scan_ptr);
 		dev_active_ptr[0] = false;
-		int newActive = thrust::max_element(dev_active_scan_ptr, dev_active_scan_ptr + activeBlocks + 1)[0];
+		int newMaxActive = thrust::max_element(dev_active_scan_ptr, dev_active_scan_ptr + oldAllocatedBlocks)[0];
 
-		lastActive = dev_active_ptr[activeBlocks];
+		lastActive = dev_active_ptr[oldAllocatedBlocks - 1];
 		if (lastActive)
-			newActive++;
+			newMaxActive++;
 
-		cudaStatus = cudaMalloc((void**)&d_sudokus_target, (9 * activeBlocks + 1) * sizeof(Sudoku));
+		int newActiveBlocks = newMaxActive - 1;
+
+		cudaStatus = cudaMalloc((void**)&d_sudokus_target, (9 * newActiveBlocks + 1) * sizeof(Sudoku));
 		if (cudaStatus != cudaSuccess) {
 			cudaEventRecord(stop, 0);
 			cudaEventSynchronize(stop);
@@ -487,7 +489,7 @@ cudaError_t SolveSudoku(byte sudokuArray[SIZE][SIZE])
 			return cudaStatus;
 		}
 
-		cudaStatus = cudaMalloc((void**)&d_active_copy, (activeBlocks + 1) * sizeof(int));
+		cudaStatus = cudaMalloc((void**)&d_active_copy, oldAllocatedBlocks * sizeof(int));
 		if (cudaStatus != cudaSuccess) {
 			cudaEventRecord(stop, 0);
 			cudaEventSynchronize(stop);
@@ -506,7 +508,7 @@ cudaError_t SolveSudoku(byte sudokuArray[SIZE][SIZE])
 			return cudaStatus;
 		}
 		
-		copyActiveKernel << <(activeBlocks + 1) / 1024 + 1, 1024 >> >(d_active, d_active_copy, (activeBlocks + 1));
+		copyActiveKernel << <oldAllocatedBlocks / 1024 + 1, 1024 >> >(d_active, d_active_copy, oldAllocatedBlocks);
 			cudaStatus = cudaGetLastError();
 			if (cudaStatus != cudaSuccess) {
 				fprintf(stderr, "copyActiveKernel launch failed: %s\n", cudaGetErrorString(cudaStatus));
@@ -537,7 +539,7 @@ cudaError_t SolveSudoku(byte sudokuArray[SIZE][SIZE])
 
 
 		cudaFree(d_active);
-		cudaStatus = cudaMalloc((void**)&d_active, (9 * activeBlocks + 1) * sizeof(int));
+		cudaStatus = cudaMalloc((void**)&d_active, (9 * newActiveBlocks + 1) * sizeof(int));
 		if (cudaStatus != cudaSuccess) {
 			cudaEventRecord(stop, 0);
 			cudaEventSynchronize(stop);
@@ -558,7 +560,7 @@ cudaError_t SolveSudoku(byte sudokuArray[SIZE][SIZE])
 		
 		dev_active_ptr = thrust::device_ptr<int>(d_active);
 
-		activeResetKernel <<<(9 * activeBlocks + 1) / 1024 + 1, 1024 >>>(d_active, (9 * activeBlocks + 1));
+		activeResetKernel <<<(9 * newActiveBlocks + 1) / 1024 + 1, 1024 >>>(d_active, (9 * newActiveBlocks + 1));
 			cudaStatus = cudaGetLastError();
 			if (cudaStatus != cudaSuccess) {
 				fprintf(stderr, "activeResetKernel launch failed: %s\n", cudaGetErrorString(cudaStatus));
@@ -588,7 +590,7 @@ cudaError_t SolveSudoku(byte sudokuArray[SIZE][SIZE])
 			}
 
 
-		copyKernel << <(activeBlocks + 1) / 1024 + 1, 1024 >> >(d_sudokus, d_sudokus_target, d_active, d_active_scan, d_active_copy, (activeBlocks + 1), newActive);
+		copyKernel << <oldAllocatedBlocks / 1024 + 1, 1024 >> >(d_sudokus, d_sudokus_target, d_active, d_active_scan, d_active_copy, oldAllocatedBlocks, newMaxActive);
 			cudaStatus = cudaGetLastError();
 			if (cudaStatus != cudaSuccess) {
 				fprintf(stderr, "copyKernel launch failed: %s\n", cudaGetErrorString(cudaStatus));
@@ -618,7 +620,7 @@ cudaError_t SolveSudoku(byte sudokuArray[SIZE][SIZE])
 			}
 
 		cudaFree(d_active_scan);
-		cudaStatus = cudaMalloc((void**)&d_active_scan, (9 * activeBlocks + 1) * sizeof(int));
+		cudaStatus = cudaMalloc((void**)&d_active_scan, (9 * newActiveBlocks + 1) * sizeof(int));
 		if (cudaStatus != cudaSuccess) {
 			cudaEventRecord(stop, 0);
 			cudaEventSynchronize(stop);
@@ -643,7 +645,7 @@ cudaError_t SolveSudoku(byte sudokuArray[SIZE][SIZE])
 		cudaFree(d_active_copy);
 		d_sudokus = d_sudokus_target;
 
-		activeBlocks = newActive - 1;
+		activeBlocks = newActiveBlocks;
 	}
 
 	cudaStatus = cudaMemcpy(h_sudokus, d_sudokus, 1 * sizeof(Sudoku), cudaMemcpyDeviceToHost);
