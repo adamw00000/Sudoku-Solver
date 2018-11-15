@@ -9,5 +9,8 @@
     <Text Include="Evil.txt" />
     <Text Include="Hard.txt" />
     <Text Include="Medium.txt" />
+    <Text Include="Wojtek2.txt" />
+    <Text Include="Wojtek.txt" />
+    <Text Include="Zeroes.txt" />
   </ItemGroup>
 </Project>

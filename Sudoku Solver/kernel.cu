@@ -835,14 +835,6 @@ int LaunchSudokuFromFile(std::string filename)
 
 int main()
 {
-	byte sudoku[SIZE][SIZE];
-	cudaError_t cudaStatus;
-	bool resultFound = false;
-
-	if (LaunchSudokuFromFile("Wojtek2.txt"))
-		return 1;
-	if (LaunchSudokuFromFile("Wojtek.txt"))
-		return 1;
 	if (LaunchSudokuFromFile("Entry.txt"))
 		return 1;
 	if (LaunchSudokuFromFile("Easy.txt"))
@@ -853,6 +845,12 @@ int main()
 		return 1;
 	if (LaunchSudokuFromFile("Evil.txt"))
 		return 1;
+	if (LaunchSudokuFromFile("Wojtek.txt"))
+		return 1;
+	if (LaunchSudokuFromFile("Wojtek2.txt"))
+		return 1;
+	//if (LaunchSudokuFromFile("Zeroes.txt"))
+	//	return 1;
 
     return 0;
 }
