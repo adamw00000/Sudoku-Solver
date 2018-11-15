@@ -835,6 +835,8 @@ int LaunchSudokuFromFile(std::string filename)
 
 int main()
 {
+	if (LaunchSudokuFromFile("Wojtek3.txt"))
+		return 1;
 	if (LaunchSudokuFromFile("Entry.txt"))
 		return 1;
 	if (LaunchSudokuFromFile("Easy.txt"))
