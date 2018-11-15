@@ -304,12 +304,18 @@ bool SolveCPU(int i, byte board[SIZE][SIZE], uint32_t constraintStructures[SIZE]
 	return false;
 }
 
-void SolveCPU(byte board[SIZE][SIZE], uint32_t constraintStructures[SIZE], byte emptyFields[SIZE], byte result[SIZE][SIZE])
+void SolveCPU(byte board[SIZE][SIZE], byte result[SIZE][SIZE])
 {
+	uint32_t constraintStructures[SIZE];
+	byte emptyFields[SIZE * SIZE];
+
+	GetConstraintStructures(board, constraintStructures);
+	GetEmptyFields(board, emptyFields);
+
 	SolveCPU(0, board, constraintStructures, emptyFields, result);
 }
 
-cudaError_t SolveSudoku(byte sudokuArray[SIZE][SIZE])
+cudaError_t SolveSudoku(byte sudokuArray[SIZE][SIZE], bool branching, byte level, bool* resultFound)
 {
 	uint32_t constraintStructures[SIZE];
 	byte emptyFields[SIZE * SIZE];
@@ -317,7 +323,7 @@ cudaError_t SolveSudoku(byte sudokuArray[SIZE][SIZE])
 	GetConstraintStructures(sudokuArray, constraintStructures);
 	GetEmptyFields(sudokuArray, emptyFields);
 
-	cudaError_t cudaStatus;
+	cudaError_t cudaStatus = cudaSuccess;
 
 	Sudoku activeSudoku(sudokuArray, constraintStructures);
 
@@ -458,6 +464,41 @@ cudaError_t SolveSudoku(byte sudokuArray[SIZE][SIZE])
 	bool lastActive;
 	while (1)
 	{
+		if (branching && i == level)
+		{
+			free(h_sudokus);
+			Sudoku *h_sudokus = (Sudoku*)malloc((activeBlocks + 1) * sizeof(Sudoku));
+			if (h_sudokus == NULL) {
+				fprintf(stderr, "malloc failed!");
+				return cudaStatus;
+			}
+
+			cudaStatus = cudaMemcpy(h_sudokus, d_sudokus, (activeBlocks + 1) * sizeof(Sudoku), cudaMemcpyDeviceToHost);
+			if (cudaStatus != cudaSuccess) {
+				fprintf(stderr, "cudaMemcpy failed!");
+				return cudaStatus;
+			}
+
+			free(h_active);
+			//free(h_sudokus);
+			cudaFree(d_sudokus);
+			cudaFree(d_active);
+			cudaFree(d_active_scan);
+			cudaFree(d_active_field);
+			for (int j = 1; j <= activeBlocks; j++)
+			{
+				printf("-------------------ROUTE: %d---------------------\n", j);
+				//getchar();
+
+				SolveSudoku(h_sudokus[j].board, false, 0, resultFound);
+				if (*resultFound)
+					return cudaStatus;
+				cudaGetLastError();
+			}
+			free(h_sudokus);
+			return cudaStatus;
+		}
+
 		if (activeBlocks <= 0)
 		{
 			cudaEventRecord(stop, 0);
@@ -468,12 +509,20 @@ cudaError_t SolveSudoku(byte sudokuArray[SIZE][SIZE])
 			printf("Sudoku:\n");
 			PrintSudoku(sudokuArray);
 			printf("This sudoku doesn't have a solution!\n");
+
+			free(h_active);
+			free(h_sudokus);
+			cudaFree(d_sudokus);
+			cudaFree(d_active);
+			cudaFree(d_active_scan);
+			cudaFree(d_active_field);
+
 			return cudaStatus;
 		}
 
 		cudaStatus = cudaMemcpy(d_active_field, emptyFields + i, sizeof(byte), cudaMemcpyHostToDevice);
 		i++;
-		printf("Iteration: %d, active blocks - %d\n", i, activeBlocks);
+		//printf("Iteration: %d, active blocks - %d\n", i, activeBlocks);
 
 		sudokuKernel <<<(activeBlocks + 1)/1024 + 1, 1024>>>(d_sudokus, d_active, activeBlocks, d_active_field);
 			cudaStatus = cudaGetLastError();
@@ -713,6 +762,8 @@ cudaError_t SolveSudoku(byte sudokuArray[SIZE][SIZE])
 	cudaEventElapsedTime(&time, start, stop);
 	printf("Time for the kernel: %f ms\n", time);
 
+	*resultFound = true;
+
 	printf("Original:\n");
 	PrintSudoku(sudokuArray);
 	printf("Solved:\n");
@@ -724,95 +775,84 @@ cudaError_t SolveSudoku(byte sudokuArray[SIZE][SIZE])
 	cudaFree(d_active);
 	cudaFree(d_active_scan);
 
-	byte result[SIZE][SIZE];
-	
+	return cudaStatus;
+}
+
+int LaunchSudokuFromFile(std::string filename)
+{
+	byte sudoku[SIZE][SIZE];
+	cudaError_t cudaStatus;
+	bool resultFound = false;
+
+	printf("%s:\n", filename.c_str());
+	if (ReadSudoku(sudoku, filename.c_str()))
+		return 1;
+	PrintSudoku(sudoku);
+
+	printf("%%%%%%%%%%%%%%%%%%%%%%%% \CALCULATING GPU RESULT %%%%%%%%%%%%%%%%%%%%%%%%%\%\n");
+
 	std::clock_t c_start = std::clock();
-	SolveCPU(sudokuArray, constraintStructures, emptyFields, result);
+
+	cudaStatus = SolveSudoku(sudoku, false, 0, &resultFound);
+	if (cudaStatus != cudaSuccess) {
+		byte level = 1;
+		do
+		{
+			printf("Solution not found!\n\n");
+			printf("%%%%%%%%%%%%%%%%%%%%%%%% \BRANCHING AT LEVEL %d %%%%%%%%%%%%%%%%%%%%%%%%%\%\n", (int)level);
+			cudaGetLastError();
+			cudaStatus = SolveSudoku(sudoku, true, level, &resultFound);
+			level++;
+		} while (cudaStatus != cudaSuccess || !resultFound);
+		//fprintf(stderr, "PrepareSudoku failed!");
+		//return 1;
+	}
 	std::clock_t c_end = std::clock();
-	
-	double time_elapsed_ms = 1000.0 * (c_end-c_start) / CLOCKS_PER_SEC;
+
+	double time_elapsed_ms = 1000.0 * (c_end - c_start) / CLOCKS_PER_SEC;
+	printf("Total time: %lf ms\n", time_elapsed_ms);
+
+	printf("\n%%%%%%%%%%%%%%%%%%%%%%%% \CALCULATING CPU RESULT %%%%%%%%%%%%%%%%%%%%%%%%%\%\n");
+
+	byte result[SIZE][SIZE];
+
+	c_start = std::clock();
+	SolveCPU(sudoku, result);
+	c_end = std::clock();
+
+	time_elapsed_ms = 1000.0 * (c_end - c_start) / CLOCKS_PER_SEC;
 	printf("Time for CPU: %lf ms\n", time_elapsed_ms);
 
 	printf("CPU result:\n");
 	PrintSudoku(result);
 
-	return cudaStatus;
+	printf("---Sudoku solved, press any key to continue---\n");
+	getchar();
+	printf("------------------------------------------------------------\n");
+
+	return 0;
 }
 
 int main()
 {
 	byte sudoku[SIZE][SIZE];
 	cudaError_t cudaStatus;
+	bool resultFound = false;
 
-	printf("Entry:\n");
-	if (ReadSudoku(sudoku, "Entry.txt"))
+	if (LaunchSudokuFromFile("Wojtek2.txt"))
 		return 1;
-	cudaStatus = SolveSudoku(sudoku);
-	if (cudaStatus != cudaSuccess) {
-		printf("Solution not found!\n");
-		//fprintf(stderr, "PrepareSudoku failed!");
+	if (LaunchSudokuFromFile("Wojtek.txt"))
 		return 1;
-	}
-	getchar();
-	printf("------------------------------------------------------------\n");
+	if (LaunchSudokuFromFile("Entry.txt"))
+		return 1;
+	if (LaunchSudokuFromFile("Easy.txt"))
+		return 1;
+	if (LaunchSudokuFromFile("Medium.txt"))
+		return 1;
+	if (LaunchSudokuFromFile("Hard.txt"))
+		return 1;
+	if (LaunchSudokuFromFile("Evil.txt"))
+		return 1;
 
-	printf("Easy:\n");
-	if (ReadSudoku(sudoku, "Easy.txt"))
-		return 1;
-	cudaStatus = SolveSudoku(sudoku);
-	if (cudaStatus != cudaSuccess) {
-		printf("Solution not found!\n");
-		//fprintf(stderr, "PrepareSudoku failed!");
-		return 1;
-	}
-	getchar();
-	printf("------------------------------------------------------------\n");
-	
-	printf("Medium:\n");
-	if (ReadSudoku(sudoku, "Medium.txt"))
-		return 1;
-	cudaStatus = SolveSudoku(sudoku);
-	if (cudaStatus != cudaSuccess) {
-		printf("Solution not found!\n");
-		//fprintf(stderr, "PrepareSudoku failed!");
-		return 1;
-	}
-	getchar();
-	printf("------------------------------------------------------------\n");
-
-	printf("Hard:\n");
-	if (ReadSudoku(sudoku, "Hard.txt"))
-		return 1;
-	cudaStatus = SolveSudoku(sudoku);
-	if (cudaStatus != cudaSuccess) {
-		printf("Solution not found!\n");
-		//fprintf(stderr, "PrepareSudoku failed!");
-		return 1;
-	}
-	getchar();
-	printf("------------------------------------------------------------\n");
-
-	printf("Evil:\n");
-	if (ReadSudoku(sudoku, "Evil.txt"))
-		return 1;
-	cudaStatus = SolveSudoku(sudoku);
-	if (cudaStatus != cudaSuccess) {
-		printf("Solution not found!\n");
-		//fprintf(stderr, "PrepareSudoku failed!");
-		return 1;
-	}
-	getchar();
-	printf("------------------------------------------------------------\n");
-
-	printf("Wojtek:\n");
-	if (ReadSudoku(sudoku, "Wojtek.txt"))
-		return 1;
-	cudaStatus = SolveSudoku(sudoku);
-	if (cudaStatus != cudaSuccess) {
-		printf("Solution not found!\n");
-		//fprintf(stderr, "PrepareSudoku failed!");
-		return 1;
-	}
-	getchar();
     return 0;
 }
