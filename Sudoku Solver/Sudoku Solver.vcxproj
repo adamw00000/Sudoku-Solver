@@ -171,6 +171,7 @@ copy "$(CudaToolkitBinDir)\cudart*.dll" "$(OutDir)"</Command>
     </Text>
     <Text Include="Wojtek.txt" />
     <Text Include="Wojtek2.txt" />
+    <Text Include="Wojtek3.txt" />
     <Text Include="Zeroes.txt" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

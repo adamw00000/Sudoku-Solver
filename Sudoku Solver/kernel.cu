@@ -835,8 +835,6 @@ int LaunchSudokuFromFile(std::string filename)
 
 int main()
 {
-	if (LaunchSudokuFromFile("Wojtek3.txt"))
-		return 1;
 	if (LaunchSudokuFromFile("Entry.txt"))
 		return 1;
 	if (LaunchSudokuFromFile("Easy.txt"))
@@ -850,6 +848,8 @@ int main()
 	if (LaunchSudokuFromFile("Wojtek.txt"))
 		return 1;
 	if (LaunchSudokuFromFile("Wojtek2.txt"))
+		return 1;
+	if (LaunchSudokuFromFile("Wojtek3.txt"))
 		return 1;
 	//if (LaunchSudokuFromFile("Zeroes.txt"))
 	//	return 1;

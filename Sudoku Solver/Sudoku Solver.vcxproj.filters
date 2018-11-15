@@ -12,5 +12,6 @@
     <Text Include="Wojtek2.txt" />
     <Text Include="Wojtek.txt" />
     <Text Include="Zeroes.txt" />
+    <Text Include="Wojtek3.txt" />
   </ItemGroup>
 </Project>
