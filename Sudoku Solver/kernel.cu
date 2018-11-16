@@ -315,7 +315,7 @@ void SolveCPU(byte board[SIZE][SIZE], byte result[SIZE][SIZE])
 	SolveCPU(0, board, constraintStructures, emptyFields, result);
 }
 
-cudaError_t SolveSudoku(byte sudokuArray[SIZE][SIZE], bool branching, byte level, bool* resultFound)
+cudaError_t SolveSudoku(byte sudokuArray[SIZE][SIZE], bool branching, byte level, bool* resultFound, bool allowRecursiveBranching)
 {
 	uint32_t constraintStructures[SIZE];
 	byte emptyFields[SIZE * SIZE];
@@ -487,10 +487,10 @@ cudaError_t SolveSudoku(byte sudokuArray[SIZE][SIZE], bool branching, byte level
 			cudaFree(d_active_field);
 			for (int j = 1; j <= activeBlocks; j++)
 			{
-				printf("-------------------ROUTE: %d---------------------\n", j);
+				printf("-------------------ROUTE: %d/%d---------------------\n", j, activeBlocks);
 				//getchar();
 
-				SolveSudoku(h_sudokus[j].board, false, 0, resultFound);
+				SolveSudoku(h_sudokus[j].board, allowRecursiveBranching, level, resultFound, allowRecursiveBranching);
 				if (*resultFound)
 					return cudaStatus;
 				cudaGetLastError();
@@ -793,7 +793,7 @@ int LaunchSudokuFromFile(std::string filename)
 
 	std::clock_t c_start = std::clock();
 
-	cudaStatus = SolveSudoku(sudoku, false, 0, &resultFound);
+	cudaStatus = SolveSudoku(sudoku, false, 0, &resultFound, false);
 	if (cudaStatus != cudaSuccess) {
 		byte level = 1;
 		do
@@ -801,7 +801,7 @@ int LaunchSudokuFromFile(std::string filename)
 			printf("Solution not found!\n\n");
 			printf("%%%%%%%%%%%%%%%%%%%%%%%% \BRANCHING AT LEVEL %d %%%%%%%%%%%%%%%%%%%%%%%%%\%\n", (int)level);
 			cudaGetLastError();
-			cudaStatus = SolveSudoku(sudoku, true, level, &resultFound);
+			cudaStatus = SolveSudoku(sudoku, true, level, &resultFound, false);
 			level++;
 		} while (cudaStatus != cudaSuccess || !resultFound);
 		//fprintf(stderr, "PrepareSudoku failed!");
