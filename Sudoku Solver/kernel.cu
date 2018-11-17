@@ -201,7 +201,7 @@ int ReadSudoku(byte board[SIZE][SIZE], std::string filename)
 		for (int j = 0; j < SIZE; j++)
 		{
 			char c = stream.get();
-			while (stream.good() && c == '\n')
+			while (stream.good() && (c == '\n' || c == ' '))
 				c = stream.get();
 
 			if (!stream.good())
@@ -209,7 +209,7 @@ int ReadSudoku(byte board[SIZE][SIZE], std::string filename)
 				printf("%s - Invalid file format!\n", filename.c_str());
 				return -1;
 			}
-			if (c != 'x' && c != '0')
+			if (c <= '9' && c >= '1')
 			{
 				int n = atoi(&c);
 				board[i][j] = n;
@@ -221,6 +221,22 @@ int ReadSudoku(byte board[SIZE][SIZE], std::string filename)
 
 	stream.close();
 	return 0;
+}
+
+int CountEmpty(byte board[SIZE][SIZE])
+{
+	int empty = 0;
+
+	for (int i = 0; i < SIZE; i++)
+	{
+		for (int j = 0; j < SIZE; j++)
+		{
+			if (board[i][j] == 0)
+				empty++;
+		}
+	}
+
+	return empty;
 }
 
 void GetConstraintStructures(byte sudoku[SIZE][SIZE], uint32_t constraintStructures[])
@@ -312,10 +328,21 @@ void SolveCPU(byte board[SIZE][SIZE], byte result[SIZE][SIZE])
 	GetConstraintStructures(board, constraintStructures);
 	GetEmptyFields(board, emptyFields);
 
-	SolveCPU(0, board, constraintStructures, emptyFields, result);
+	if (!SolveCPU(0, board, constraintStructures, emptyFields, result))
+	{
+		printf("Sudoku:\n");
+		PrintSudoku(board);
+		printf("NO GLOBAL SOLUTIONS FOR THIS SUDOKU!\n\n");
+	}
+	else
+	{
+
+		printf("CPU result:\n");
+		PrintSudoku(result);
+	}
 }
 
-cudaError_t SolveSudoku(byte sudokuArray[SIZE][SIZE], bool branching, byte level, bool* resultFound, bool allowRecursiveBranching)
+cudaError_t SolveSudoku(byte sudokuArray[SIZE][SIZE], bool branching, int level, bool* resultFound, bool allowRecursiveBranching, bool numberBranching)
 {
 	uint32_t constraintStructures[SIZE];
 	byte emptyFields[SIZE * SIZE];
@@ -464,7 +491,7 @@ cudaError_t SolveSudoku(byte sudokuArray[SIZE][SIZE], bool branching, byte level
 	bool lastActive;
 	while (1)
 	{
-		if (branching && i == level)
+		if (branching && ((numberBranching && activeBlocks >= level) || i == level))
 		{
 			free(h_sudokus);
 			Sudoku *h_sudokus = (Sudoku*)malloc((activeBlocks + 1) * sizeof(Sudoku));
@@ -490,7 +517,7 @@ cudaError_t SolveSudoku(byte sudokuArray[SIZE][SIZE], bool branching, byte level
 				printf("-------------------ROUTE: %d/%d---------------------\n", j, activeBlocks);
 				//getchar();
 
-				SolveSudoku(h_sudokus[j].board, allowRecursiveBranching, level, resultFound, allowRecursiveBranching);
+				SolveSudoku(h_sudokus[j].board, allowRecursiveBranching, level, resultFound, allowRecursiveBranching, numberBranching);
 				if (*resultFound)
 					return cudaStatus;
 				cudaGetLastError();
@@ -783,6 +810,7 @@ int LaunchSudokuFromFile(std::string filename)
 	byte sudoku[SIZE][SIZE];
 	cudaError_t cudaStatus;
 	bool resultFound = false;
+	bool allowBranching = false;
 
 	printf("%s:\n", filename.c_str());
 	if (ReadSudoku(sudoku, filename.c_str()))
@@ -793,15 +821,25 @@ int LaunchSudokuFromFile(std::string filename)
 
 	std::clock_t c_start = std::clock();
 
-	cudaStatus = SolveSudoku(sudoku, false, 0, &resultFound, false);
+	cudaStatus = SolveSudoku(sudoku, allowBranching, 0, &resultFound, false, false);
 	if (cudaStatus != cudaSuccess) {
-		byte level = 1;
+		allowBranching = true;
+		int empty = CountEmpty(sudoku);
+		bool allowRecursiveBranching = false;
+		int level = 1;
+		bool numberOfBlocksBranching = false;
+
+		if (empty > 81 - 17)
+		{
+			allowRecursiveBranching = true;
+		}
+
 		do
 		{
 			printf("Solution not found!\n\n");
 			printf("%%%%%%%%%%%%%%%%%%%%%%%% \BRANCHING AT LEVEL %d %%%%%%%%%%%%%%%%%%%%%%%%%\%\n", (int)level);
 			cudaGetLastError();
-			cudaStatus = SolveSudoku(sudoku, true, level, &resultFound, false);
+			cudaStatus = SolveSudoku(sudoku, allowBranching, level, &resultFound, allowRecursiveBranching, numberOfBlocksBranching);
 			level++;
 		} while (cudaStatus != cudaSuccess || !resultFound);
 		//fprintf(stderr, "PrepareSudoku failed!");
@@ -810,7 +848,10 @@ int LaunchSudokuFromFile(std::string filename)
 	std::clock_t c_end = std::clock();
 
 	double time_elapsed_ms = 1000.0 * (c_end - c_start) / CLOCKS_PER_SEC;
-	printf("Total time: %lf ms\n", time_elapsed_ms);
+	printf("Total GPU time: %lf ms\n", time_elapsed_ms);
+
+	if (!resultFound)
+		printf("\nNO GLOBAL SOLUTIONS FOR THIS SUDOKU!\n");
 
 	printf("\n%%%%%%%%%%%%%%%%%%%%%%%% \CALCULATING CPU RESULT %%%%%%%%%%%%%%%%%%%%%%%%%\%\n");
 
@@ -823,10 +864,7 @@ int LaunchSudokuFromFile(std::string filename)
 	time_elapsed_ms = 1000.0 * (c_end - c_start) / CLOCKS_PER_SEC;
 	printf("Time for CPU: %lf ms\n", time_elapsed_ms);
 
-	printf("CPU result:\n");
-	PrintSudoku(result);
-
-	printf("---Sudoku solved, press any key to continue---\n");
+	printf("-----Sudoku solved, press any key to continue-----\n");
 	getchar();
 	printf("------------------------------------------------------------\n");
 
@@ -835,6 +873,8 @@ int LaunchSudokuFromFile(std::string filename)
 
 int main()
 {
+	if (LaunchSudokuFromFile("Invalid.txt"))
+		return 1;
 	if (LaunchSudokuFromFile("Entry.txt"))
 		return 1;
 	if (LaunchSudokuFromFile("Easy.txt"))
@@ -845,14 +885,14 @@ int main()
 		return 1;
 	if (LaunchSudokuFromFile("Evil.txt"))
 		return 1;
+	if (LaunchSudokuFromFile("Zeroes.txt"))
+		return 1;
 	if (LaunchSudokuFromFile("Wojtek.txt"))
 		return 1;
 	if (LaunchSudokuFromFile("Wojtek2.txt"))
 		return 1;
 	if (LaunchSudokuFromFile("Wojtek3.txt"))
 		return 1;
-	//if (LaunchSudokuFromFile("Zeroes.txt"))
-	//	return 1;
 
     return 0;
 }
