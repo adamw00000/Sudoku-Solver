@@ -817,7 +817,7 @@ int LaunchSudokuFromFile(std::string filename)
 		return 1;
 	PrintSudoku(sudoku);
 
-	printf("%%%%%%%%%%%%%%%%%%%%%%%% \CALCULATING GPU RESULT %%%%%%%%%%%%%%%%%%%%%%%%%\%\n");
+	printf("%%%%%%%%%%%%%%%%%%%%%%%% CALCULATING GPU RESULT %%%%%%%%%%%%%%%%%%%%%%%%%\%\n");
 
 	std::clock_t c_start = std::clock();
 
@@ -832,12 +832,16 @@ int LaunchSudokuFromFile(std::string filename)
 		if (empty > 81 - 17)
 		{
 			allowRecursiveBranching = true;
+			level = 9;
 		}
 
 		do
 		{
 			printf("Solution not found!\n\n");
-			printf("%%%%%%%%%%%%%%%%%%%%%%%% \BRANCHING AT LEVEL %d %%%%%%%%%%%%%%%%%%%%%%%%%\%\n", (int)level);
+			if (allowRecursiveBranching)
+				printf("%%%%%%%%%%%%%%%%%%%%%%%% RECURSIVE BRANCHING AT LEVEL %d %%%%%%%%%%%%%%%%%%%%%%%%%\%\n", (int)level);
+
+			printf("%%%%%%%%%%%%%%%%%%%%%%%% BRANCHING AT LEVEL %d %%%%%%%%%%%%%%%%%%%%%%%%%\%\n", (int)level);
 			cudaGetLastError();
 			cudaStatus = SolveSudoku(sudoku, allowBranching, level, &resultFound, allowRecursiveBranching, numberOfBlocksBranching);
 			level++;
@@ -853,7 +857,7 @@ int LaunchSudokuFromFile(std::string filename)
 	if (!resultFound)
 		printf("\nNO GLOBAL SOLUTIONS FOR THIS SUDOKU!\n");
 
-	printf("\n%%%%%%%%%%%%%%%%%%%%%%%% \CALCULATING CPU RESULT %%%%%%%%%%%%%%%%%%%%%%%%%\%\n");
+	printf("\n%%%%%%%%%%%%%%%%%%%%%%%% CALCULATING CPU RESULT %%%%%%%%%%%%%%%%%%%%%%%%%\%\n");
 
 	byte result[SIZE][SIZE];
 
